@@ -50,6 +50,31 @@ static class Native
 
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
+    public const byte VK_RETURN = 0x0D;
+    public const uint VK_MEDIA_PLAY_PAUSE = 0xB3;
+    public const uint LLKHF_INJECTED = 0x10;
+    public const int WM_KEYDOWN = 0x0100, WM_SYSKEYDOWN = 0x0104;
+    const int WH_KEYBOARD_LL = 13;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KBDLLHOOKSTRUCT
+    {
+        public uint vkCode, scanCode, flags, time;
+        public UIntPtr dwExtraInfo;
+    }
+
+    public delegate IntPtr LowLevelKeyboardProc(int code, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern IntPtr SetWindowsHookExW(int id, LowLevelKeyboardProc proc, IntPtr module, uint thread);
+    [DllImport("user32.dll")] public static extern bool UnhookWindowsHookEx(IntPtr hook);
+    [DllImport("user32.dll")] public static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string? name);
+
+    /// <summary>Sees every key press system-wide before any app does, and can swallow it.</summary>
+    public static IntPtr InstallKeyboardHook(LowLevelKeyboardProc proc) =>
+        SetWindowsHookExW(WH_KEYBOARD_LL, proc, GetModuleHandleW(null), 0);
+
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out int pid);

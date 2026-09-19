@@ -42,6 +42,9 @@ sealed class AppManager
     readonly Dictionary<IntPtr, DateTime> firstSeen = new();
     readonly Dictionary<IntPtr, DateTime> closeSent = new();
     DateTime lastDiscovery = DateTime.MinValue;
+    /// <summary>After closing the Steam tile, keep sending Steam's normal
+    /// window to the tray until this time.</summary>
+    DateTime steamWindowCloseUntil = DateTime.MinValue;
 
     public AppManager(LauncherConfig config)
     {
@@ -128,6 +131,8 @@ sealed class AppManager
             }
         }
 
+        if (now < steamWindowCloseUntil) CloseSteamDesktopWindows(windows, now);
+
         if (needDiscovery && (now - lastDiscovery).TotalSeconds > 5) _ = DiscoverAsync();
     }
 
@@ -196,6 +201,11 @@ sealed class AppManager
         r.PendingFocus = false;
         foreach (var w in r.Windows) Native.PostMessageW(w.Hwnd, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
         Log.Write($"close {tile.Name}: {r.Windows.Count} window(s)");
+
+        // Closing Big Picture only drops Steam back to its ordinary window.
+        // Send that to the tray too (Refresh does it once it appears), or you
+        // land on a Steam window you never asked for.
+        if (tile.Kind == TileKind.Steam) steamWindowCloseUntil = DateTime.UtcNow.AddSeconds(10);
     }
 
     /// <summary>Finds browser instances running with one of our tile profiles.</summary>
@@ -314,6 +324,24 @@ sealed class AppManager
         }
         // Apps: the biggest window is the real one, not a splash or a panel.
         return candidates.OrderByDescending(w => w.Area).First().Hwnd;
+    }
+
+    /// <summary>
+    /// Closing Steam's main window sends it to the system tray — Steam keeps
+    /// running for downloads and friends, just not on screen. Anything still
+    /// titled Big Picture is the tile's own window and is left to Close().
+    /// </summary>
+    void CloseSteamDesktopWindows(List<WinInfo> windows, DateTime now)
+    {
+        foreach (var w in windows)
+        {
+            if (!SteamProcesses.Contains(w.Process, StringComparer.OrdinalIgnoreCase)) continue;
+            if (w.Title.Contains(SteamWindowTitle, StringComparison.OrdinalIgnoreCase)) continue;
+            if (closeSent.TryGetValue(w.Hwnd, out var sent) && (now - sent).TotalSeconds < 3) continue;
+            closeSent[w.Hwnd] = now;
+            Native.PostMessageW(w.Hwnd, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+            Log.Write($"steam: sent \"{w.Title}\" to the tray");
+        }
     }
 
     void ClosePopups(TileRuntime r, DateTime now)

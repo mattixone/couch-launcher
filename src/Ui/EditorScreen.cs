@@ -158,6 +158,11 @@ sealed class EditorScreen : Screen
                 break;
         }
 
+        fields.Children.Add(Field("A BUTTON", Chips(
+            ("PLAY / PAUSE", !tile.AButtonSelects, () => { tile.ASelects = false; RebuildForm(); }),
+            ("SELECT (ENTER)", tile.AButtonSelects, () => { tile.ASelects = true; RebuildForm(); })),
+            "What the Retroid's A button does inside this app. Choose SELECT for apps you steer with the D-pad, like YouTube TV (TV-mode tiles do this already)."));
+
         fields.Children.Add(Field("POP-UP WINDOWS", Chips(
             (tile.BlockPopups ? "BLOCKED" : "ALLOWED", tile.BlockPopups, () => { tile.BlockPopups = !tile.BlockPopups; RebuildForm(); })),
             "Allow them while you sign in for the first time, then block them again."));

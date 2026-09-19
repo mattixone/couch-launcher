@@ -74,6 +74,7 @@ sealed class MainWindow : Window
         {
             Native.UnregisterHotKey(hwnd, HotkeyHome);
             Native.UnregisterHotKey(hwnd, HotkeySwitch);
+            MediaKeyRemap.Remove();
         };
         Application.Current.SessionEnding += (_, _) => allowClose = true;
         ticker.Tick += (_, _) => Tick();
@@ -92,6 +93,7 @@ sealed class MainWindow : Window
     {
         Log.Write($"launcher v{Updater.Version} started");
         LoginStartup.Apply(Config.StartAtLogin);
+        MediaKeyRemap.Install(AShouldSelect);
         BringToFront();
         await Apps.DiscoverAsync();
         Apps.Refresh();
@@ -324,6 +326,18 @@ sealed class MainWindow : Window
         int start = at >= 0 ? (at + 1) % running.Count : Math.Max(0, running.FindIndex(t => t.Id == lastTileId));
         ShowScreen(new SwitcherScreen(this, running, start, returnTo: inFront));
         BringToFront();
+    }
+
+    /// <summary>
+    /// True while an app that wants A as Enter is in front. Called from the
+    /// keyboard hook, which runs on this thread between messages, so reading
+    /// the window lists here can't collide with Refresh.
+    /// </summary>
+    bool AShouldSelect()
+    {
+        var front = Native.GetForegroundWindow();
+        if (front == IntPtr.Zero || front == hwnd) return false;
+        return Apps.ByWindow(front)?.Tile.AButtonSelects == true;
     }
 
     // ---------------------------------------------------------------- input
