@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Couch Launcher - a full-screen, D-pad-driven home screen for the Beelink,
+    driven by the Retroid through the Pico like everything else.
+
+    Built on the Mac (EnableWindowsTargeting) and published by release.sh.
+    It only RUNS on Windows.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>CouchLauncher</AssemblyName>
+    <RootNamespace>CouchLauncher</RootNamespace>
+    <Version>0.0.1</Version>
+    <!-- Set by release.sh to the GitHub repo the updates are published to. -->
+    <UpdateRepo></UpdateRepo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="UpdateRepo" Value="$(UpdateRepo)" />
+    <!-- WPF drops System.IO from the implicit usings (its Path clashes with
+         Shapes.Path). Nothing here uses Shapes by short name, so bring it back. -->
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Installer + self-updater. Keep in step with vpk in .config/dotnet-tools.json. -->
+    <PackageReference Include="Velopack" Version="1.2.0" />
+    <!-- WMI, to find browser windows the launcher opened before it last restarted. -->
+    <PackageReference Include="System.Management" Version="10.0.12" />
+  </ItemGroup>
+
+</Project>
