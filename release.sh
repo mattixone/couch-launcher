@@ -28,18 +28,20 @@ else
 fi
 echo "==> Couch Launcher $VERSION -> $REPO_URL"
 
-rm -rf build/publish
+# GitHub holds the release history; start the local copy fresh each time.
+rm -rf build/publish build/releases
 dotnet publish CouchLauncher.csproj -c Release -r win-x64 --self-contained true \
   -o build/publish -p:Version="$VERSION" -p:UpdateRepo="$REPO_URL"
 
 dotnet tool restore
 # The previous release, so this one can ship as a small "what changed" update.
-dotnet vpk download github --repoUrl "$REPO_URL" -o build/releases || true
+# --channel win everywhere: on a Mac vpk otherwise assumes a Mac release.
+dotnet vpk download github --repoUrl "$REPO_URL" --channel win -o build/releases || true
 # "[win]" tells vpk to package for Windows from a Mac. Quoted so bash leaves it alone.
 dotnet vpk "[win]" pack --packId CouchLauncher --packVersion "$VERSION" \
   --packDir build/publish --mainExe CouchLauncher.exe \
   --packTitle "Couch Launcher" --packAuthors "Couch Commander" -o build/releases
-dotnet vpk upload github --repoUrl "$REPO_URL" -o build/releases --publish \
+dotnet vpk upload github --repoUrl "$REPO_URL" --channel win -o build/releases --publish \
   --releaseName "Couch Launcher $VERSION" --tag "v$VERSION" --token "$(gh auth token)"
 
 echo "==> Released $VERSION"
