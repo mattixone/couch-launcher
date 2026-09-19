@@ -311,7 +311,7 @@ sealed class MainWindow : Window
             return;
         }
         Apps.Refresh();
-        var running = Config.Tiles.Where(t => Apps.For(t).Running).ToList();
+        var running = Config.Tiles.Where(t => !t.Hidden && Apps.For(t).Running).ToList();
         if (running.Count == 0)
         {
             ShowHome();

@@ -24,7 +24,7 @@ sealed class HomeScreen : Screen
     {
         items.Clear();
         views.Clear();
-        items.AddRange(Host.Config.Tiles);
+        items.AddRange(Host.Config.Tiles.Where(t => !t.Hidden));
         items.Add(BuiltIn.Power);
         items.Add(BuiltIn.Settings);
         focus = Math.Clamp(focus, 0, items.Count - 1);

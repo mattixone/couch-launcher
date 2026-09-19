@@ -36,6 +36,10 @@ sealed class Tile
     public bool ForceFullscreen { get; set; } = true;
 
     // --- Any kind ---
+    /// <summary>Kept in the tile list but left off the home screen and the
+    /// switcher, for tiles you might want back.</summary>
+    public bool Hidden { get; set; }
+
     /// <summary>What the Retroid's A button (a Play/Pause media key) does while
     /// this tile's app is in front: null = automatic (Enter for TV-mode tiles),
     /// true = press Enter instead, false = leave it as Play/Pause. Menus in

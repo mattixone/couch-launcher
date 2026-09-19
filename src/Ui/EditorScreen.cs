@@ -86,7 +86,9 @@ sealed class EditorScreen : Screen
                 BorderThickness = new Thickness(2),
                 BorderBrush = Crt.Fg(on ? 1 : 0.2),
                 Background = Crt.Fg(on ? 0.16 : 0.02),
-                Child = Crt.Text($"{i + 1}. {Tiles[i].Name.ToUpperInvariant()}", 26, bold: on),
+                Child = Crt.Text(
+                    $"{i + 1}. {Tiles[i].Name.ToUpperInvariant()}{(Tiles[i].Hidden ? "  (HIDDEN)" : "")}",
+                    26, Tiles[i].Hidden ? 0.5 : 1, bold: on),
                 Cursor = System.Windows.Input.Cursors.Hand,
             };
             row.MouseLeftButtonUp += (_, e) =>
@@ -116,6 +118,11 @@ sealed class EditorScreen : Screen
             tile.Name = value;
             RebuildList();
         })));
+
+        fields.Children.Add(Field("HOME SCREEN", Chips(
+            ("SHOWN", !tile.Hidden, () => { tile.Hidden = false; RebuildList(); RebuildForm(); }),
+            ("HIDDEN", tile.Hidden, () => { tile.Hidden = true; RebuildList(); RebuildForm(); })),
+            "Hidden tiles stay here so you can bring them back, but don't appear on the home screen or in the switcher."));
 
         fields.Children.Add(Field("TYPE", Chips(
             ("WEB PAGE", tile.Kind == TileKind.Web, () => SetKind(tile, TileKind.Web)),
