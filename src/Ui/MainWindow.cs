@@ -31,6 +31,7 @@ sealed class MainWindow : Window
     readonly TextBlock title = new(), subtitle = new(), clock = new(), date = new(), hint = new(), status = new();
     readonly DispatcherTimer ticker = new() { Interval = TimeSpan.FromMilliseconds(500) };
     readonly DispatcherTimer statusTimer = new();
+    readonly DispatcherTimer startupTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     readonly HomeScreen home;
 
     Screen screen;
@@ -42,6 +43,11 @@ sealed class MainWindow : Window
     string? lastTileId;
     int desktopTicks;
     bool allowClose;
+    /// <summary>Until when the launcher keeps reclaiming the front after it starts.</summary>
+    DateTime startupHoldUntil;
+    /// <summary>Consecutive startup checks that found the launcher already in front.</summary>
+    int startupSettled;
+    IntPtr startupLastThief;
 
     public MainWindow()
     {
@@ -78,6 +84,7 @@ sealed class MainWindow : Window
         };
         Application.Current.SessionEnding += (_, _) => allowClose = true;
         ticker.Tick += (_, _) => Tick();
+        startupTimer.Tick += (_, _) => StartupHold();
         statusTimer.Tick += (_, _) =>
         {
             statusTimer.Stop();
@@ -95,6 +102,7 @@ sealed class MainWindow : Window
         LoginStartup.Apply(Config.StartAtLogin);
         MediaKeyRemap.Install(AShouldSelect);
         BringToFront();
+        BeginStartupHold();
         await Apps.DiscoverAsync();
         Apps.Refresh();
         home.Tick();
@@ -234,6 +242,61 @@ sealed class MainWindow : Window
         if (hwnd != IntPtr.Zero && !Native.ForceForeground(hwnd)) Log.Write("couldn't bring the launcher to the front");
     }
 
+    /// <summary>
+    /// Started with Windows, the launcher's one attempt at the front usually
+    /// loses: Explorer is still building the desktop and taskbar, other
+    /// startup apps are opening windows, and Windows won't let a background
+    /// program take focus. It ends up as a taskbar button. So for the first
+    /// couple of minutes keep reclaiming the front, until it has stayed there
+    /// for a while or you've opened something.
+    /// </summary>
+    void BeginStartupHold()
+    {
+        startupHoldUntil = DateTime.Now.AddMinutes(2);
+        startupSettled = 0;
+        startupTimer.Start();
+    }
+
+    void EndStartupHold() => startupTimer.Stop();
+
+    void StartupHold()
+    {
+        if (DateTime.Now > startupHoldUntil)
+        {
+            EndStartupHold();
+            return;
+        }
+        var foreground = Native.GetForegroundWindow();
+        if (foreground == hwnd && WindowState != WindowState.Minimized)
+        {
+            if (++startupSettled >= 10) EndStartupHold();
+            return;
+        }
+        startupSettled = 0;
+        // Log each window that takes the front once, not every second.
+        if (foreground != startupLastThief)
+        {
+            startupLastThief = foreground;
+            Log.Write($"startup: reclaiming the front from \"{Native.WindowTitle(foreground)}\" ({Native.ClassName(foreground)})");
+        }
+        BringToFront();
+    }
+
+    /// <summary>
+    /// The TV can come up after the launcher (HDMI handshakes late, or the
+    /// resolution changes as Windows signs in), leaving the window sized for
+    /// a screen that's gone. Maximise again to fill whatever is there now.
+    /// Games change the resolution too, so leave the window alone while an
+    /// app is in front — re-maximising activates it.
+    /// </summary>
+    void Refit()
+    {
+        if (WindowState != WindowState.Maximized) return;
+        if (!startupTimer.IsEnabled && Native.GetForegroundWindow() != hwnd) return;
+        WindowState = WindowState.Normal;
+        WindowState = WindowState.Maximized;
+    }
+
     public void ExitLauncher()
     {
         Log.Write("exit from settings");
@@ -254,6 +317,8 @@ sealed class MainWindow : Window
                 ShowScreen(new SettingsScreen(this));
                 return;
         }
+
+        EndStartupHold();
 
         if (screen != home) ShowScreen(home);
         home.FocusTile(tile.Id);
@@ -305,6 +370,7 @@ sealed class MainWindow : Window
 
     void OnSwitchHotkey()
     {
+        EndStartupHold();
         if (screen is SwitcherScreen open)
         {
             open.Advance();
@@ -397,6 +463,12 @@ sealed class MainWindow : Window
 
     IntPtr WndProc(IntPtr h, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (msg == Native.WM_DISPLAYCHANGE)
+        {
+            Log.Write("display changed — refitting");
+            Dispatcher.InvokeAsync(Refit, DispatcherPriority.Background);
+            return IntPtr.Zero;
+        }
         if (msg != Native.WM_HOTKEY) return IntPtr.Zero;
         handled = true;
         switch (wParam.ToInt32())
