@@ -3,7 +3,7 @@ using System.Windows.Controls;
 
 namespace CouchLauncher.Ui;
 
-/// <summary>Theme, start-with-Windows, tile editing, updates. D-pad friendly.</summary>
+/// <summary>Theme, start-with-Windows, controller, tile editing, updates. D-pad friendly.</summary>
 sealed class SettingsScreen : Screen
 {
     sealed record Row(Func<string> Label, Action Select, Action<int>? Adjust = null);
@@ -21,6 +21,7 @@ sealed class SettingsScreen : Screen
                 () => Host.SetTheme(Host.Palette.Next),
                 step => Host.SetTheme(step > 0 ? Host.Palette.Next : Host.Palette.Previous)),
             new(() => $"START WITH WINDOWS:  {(Host.Config.StartAtLogin ? "ON" : "OFF")}", ToggleStartup),
+            new(() => $"CONTROLLER:  {(Host.Config.Controller ? "ON" : "OFF")}", ToggleController),
             new(() => "EDIT TILES", () => Host.ShowScreen(new EditorScreen(Host))),
             new(() => "CHECK FOR UPDATES", CheckForUpdates),
             new(() => "EXIT THE LAUNCHER", ConfirmExit),
@@ -83,6 +84,18 @@ sealed class SettingsScreen : Screen
         info.Children.Add(Line("from inside any app.", 0.6, 20));
         if (Host.HotkeyProblems.Length > 0) info.Children.Add(Line(Host.HotkeyProblems, 1, 20));
         info.Children.Add(Spacer());
+        info.Children.Add(Heading("CONTROLLER"));
+        if (Host.Config.Controller)
+        {
+            info.Children.Add(Line($"HOME     HOLD {Host.Config.ControllerHomeCombo.ToUpperInvariant()}"));
+            int connected = Host.ControllersConnected;
+            info.Children.Add(Line(connected > 0 ? $"{connected} CONNECTED" : "NONE FOUND — XBOX-STYLE PADS ONLY", 0.6, 20));
+        }
+        else
+        {
+            info.Children.Add(Line("OFF", 0.6, 20));
+        }
+        info.Children.Add(Spacer());
         info.Children.Add(Heading("ABOUT"));
         info.Children.Add(Line($"VERSION  {Updater.Version}"));
         info.Children.Add(Line("Log and settings:", 0.6, 20));
@@ -125,6 +138,14 @@ sealed class SettingsScreen : Screen
         Host.Config.Save();
         LoginStartup.Apply(Host.Config.StartAtLogin);
         note = Updater.IsInstalled ? "" : "(START WITH WINDOWS ONLY APPLIES TO THE INSTALLED APP)";
+        Host.RebuildScreen();
+    }
+
+    void ToggleController()
+    {
+        Host.Config.Controller = !Host.Config.Controller;
+        Host.Config.Save();
+        Host.ApplyController();
         Host.RebuildScreen();
     }
 

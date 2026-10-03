@@ -22,6 +22,7 @@ sealed class MainWindow : Window
     public AppManager Apps { get; }
     public Theme Palette => Theme.Get(Config.Theme);
     public string HotkeyProblems { get; private set; } = "";
+    public int ControllersConnected => pad.Connected;
 
     readonly Grid stage = new() { Width = 1920, Height = 1080 };
     readonly Border screenHost = new();
@@ -33,6 +34,7 @@ sealed class MainWindow : Window
     readonly DispatcherTimer statusTimer = new();
     readonly DispatcherTimer startupTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     readonly HomeScreen home;
+    readonly Gamepad pad;
 
     Screen screen;
     Modal? modal;
@@ -58,6 +60,8 @@ sealed class MainWindow : Window
 
         Config = LauncherConfig.Load();
         Apps = new AppManager(Config);
+        pad = new Gamepad(() => hwnd != IntPtr.Zero && Native.GetForegroundWindow() == hwnd,
+            nav => HandleNav(nav), ShowHome);
         BuildChrome();
         Content = new Viewbox { Stretch = Stretch.Uniform, Child = stage };
 
@@ -81,6 +85,7 @@ sealed class MainWindow : Window
             Native.UnregisterHotKey(hwnd, HotkeyHome);
             Native.UnregisterHotKey(hwnd, HotkeySwitch);
             MediaKeyRemap.Remove();
+            pad.Stop();
         };
         Application.Current.SessionEnding += (_, _) => allowClose = true;
         ticker.Tick += (_, _) => Tick();
@@ -101,6 +106,7 @@ sealed class MainWindow : Window
         Log.Write($"launcher v{Updater.Version} started");
         LoginStartup.Apply(Config.StartAtLogin);
         MediaKeyRemap.Install(AShouldSelect);
+        ApplyController();
         BringToFront();
         BeginStartupHold();
         await Apps.DiscoverAsync();
@@ -411,33 +417,32 @@ sealed class MainWindow : Window
     void OnKey(object sender, KeyEventArgs e)
     {
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        var nav = Input.Map(key);
         // Open question going in: does Windows hand the Retroid's A button
         // (a media key) to the launcher, or only to whatever's playing?
         if (key is Key.MediaPlayPause or Key.Play) Log.Write("play/pause key reached the launcher");
-        if (modal != null)
-        {
-            if (nav != Nav.None)
-            {
-                modal.OnNav(nav);
-                e.Handled = true;
-            }
-            return;
-        }
-        if (screen.CapturesTyping)
-        {
-            if (key == Key.Escape)
-            {
-                screen.OnNav(Nav.Back);
-                e.Handled = true;
-            }
-            return;
-        }
-        if (nav != Nav.None)
-        {
-            screen.OnNav(nav);
-            e.Handled = true;
-        }
+        // Screens with text fields keep every key but Escape for typing.
+        if (modal == null && screen.CapturesTyping && key != Key.Escape) return;
+        e.Handled = HandleNav(Input.Map(key));
+    }
+
+    /// <summary>Keys and the controller both end up here.</summary>
+    bool HandleNav(Nav nav)
+    {
+        if (nav == Nav.None) return false;
+        if (modal != null) modal.OnNav(nav);
+        else if (!screen.CapturesTyping) screen.OnNav(nav);
+        else if (nav == Nav.Back) screen.OnNav(nav);
+        else return false;
+        return true;
+    }
+
+    /// <summary>Starts or stops the controller to match the settings.</summary>
+    public void ApplyController()
+    {
+        var problem = pad.Configure(Config.Controller, Config.ControllerHomeCombo, Config.ControllerHoldMs);
+        if (problem == null) return;
+        Log.Write("controller: " + problem);
+        SetStatus(problem, 20);
     }
 
     void RegisterHotkeys()

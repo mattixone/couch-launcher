@@ -15,6 +15,20 @@ A (Play/Pause) opens, B (Escape) closes an open app.
 
 Both can be changed in `config.json`.
 
+## Game controller
+
+Any Xbox-style controller works too (on by default; Settings › Controller).
+In the launcher the d-pad or left stick moves, A opens, B goes back. Inside
+another app the controller is left alone, except:
+
+| Hold for a second | Does |
+|---|---|
+| `Back` + `Start` (View + Menu) | Back to the tiles, from anywhere |
+
+The combo and hold time are `ControllerHomeCombo` and `ControllerHoldMs` in
+`config.json`. PlayStation and Switch pads need Steam Input or DS4Windows to
+appear as Xbox controllers.
+
 ## Where things live on the PC
 
 - App: `%LocalAppData%\CouchLauncher` (managed by the installer; replaced on update)

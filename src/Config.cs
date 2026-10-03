@@ -72,6 +72,13 @@ sealed class LauncherConfig
     public bool StartAtLogin { get; set; } = true;
     public string HomeHotkey { get; set; } = "Ctrl+Alt+Shift+H";
     public string SwitchHotkey { get; set; } = "Ctrl+Alt+Shift+S";
+    /// <summary>Xbox-style controllers drive the launcher too.</summary>
+    public bool Controller { get; set; } = true;
+    /// <summary>Controller buttons to hold, from inside any app, to come back
+    /// to the tiles. Names: A B X Y LB RB Back Start LeftThumb RightThumb DpadUp…</summary>
+    public string ControllerHomeCombo { get; set; } = "Back+Start";
+    /// <summary>How long the combo must be held, so a stray press in a game doesn't count.</summary>
+    public int ControllerHoldMs { get; set; } = 800;
     /// <summary>What TV-mode tiles claim to be. Here rather than hard-coded so
     /// it can be swapped if YouTube stops accepting this one.</summary>
     public string TvUserAgent { get; set; } = DefaultTvUserAgent;
