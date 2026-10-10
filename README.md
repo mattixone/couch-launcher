@@ -44,15 +44,22 @@ from `couchcommander.local`, so phones that can't do `.local` names still find i
   - `config.json`: tiles, theme, shortcuts, phone remote
   - `launcher.log`: first place to look when something misbehaves
 
-## Releasing (on the Mac)
+## Releasing
+
+**From GitHub (no Mac needed):** on the repo's **Actions** tab (or in the
+GitHub app), pick **Release** › **Run workflow**. Leave the version empty
+for the next one (1.0.4 → 1.0.5), or type an exact one. It builds on
+GitHub's Windows machines and publishes the release in a few minutes.
+
+**From the Mac:**
 
 ```bash
 ./release.sh
 ```
 
-Builds the Windows app here, packages it with Velopack and publishes a GitHub
-release. The Beelink installs it on its next start, or immediately from
-Settings › Check for updates. The installer link is always
-`<repo>/releases/latest/download/CouchLauncher-win-Setup.exe`.
-
 Needs the .NET SDK in `~/.dotnet` and the GitHub CLI signed in (`gh auth login`).
+
+Either way, it packages the app with Velopack and publishes a GitHub release,
+with the latest phone remote page built in. The Beelink installs it on its
+next start, or immediately from Settings › Check for updates. The installer
+link is always `<repo>/releases/latest/download/CouchLauncher-win-Setup.exe`.
