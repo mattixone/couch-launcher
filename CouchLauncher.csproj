@@ -30,10 +30,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The phone remote page, from github.com/mattixone/CouchControllerWeb.
+         release.sh refreshes it before each build. -->
+    <EmbeddedResource Include="web\index.html" LogicalName="CouchLauncher.web.index.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Installer + self-updater. Keep in step with vpk in .config/dotnet-tools.json. -->
     <PackageReference Include="Velopack" Version="1.2.0" />
     <!-- WMI, to find browser windows the launcher opened before it last restarted. -->
     <PackageReference Include="System.Management" Version="10.0.12" />
+    <!-- QR code for the phone remote, so guests can scan it off the TV. -->
+    <PackageReference Include="QRCoder" Version="1.8.0" />
   </ItemGroup>
 
 </Project>

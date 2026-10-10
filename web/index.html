@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<!-- Filled in by Couch Launcher when it serves this page: where the Pico is. -->
+<meta name="couch-pico" content="">
+<title>Couch Commander</title>
+<style>
+/* Colours come from the same theme list as the Retroid app and Couch Launcher. */
+:root {
+  --ph: #00ff66;            /* phosphor */
+  --bg: #000000;            /* panel */
+  --scan: 0.33;             /* scanline strength, 0 for LCD themes */
+  --gap: 10px;
+  --dim: color-mix(in srgb, var(--ph) 55%, transparent);
+  --faint: color-mix(in srgb, var(--ph) 22%, transparent);
+  --wash: color-mix(in srgb, var(--ph) 5%, transparent);
+  --glow: color-mix(in srgb, var(--ph) 45%, transparent);
+  --font: "Share Tech Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bg); color: var(--ph);
+  font-family: var(--font);
+  overflow: hidden; overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+/* Whole-screen CRT scanlines. */
+body::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 100;
+  background: repeating-linear-gradient(to bottom,
+    rgba(0,0,0,calc(var(--scan) * 0.9)) 0 1px, transparent 1px 3px);
+}
+
+.app {
+  height: 100dvh;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+           max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  display: grid; gap: var(--gap);
+  grid-template-columns: 1fr;
+  grid-template-rows: auto minmax(160px, 1fr) auto auto;
+  grid-template-areas: "top" "pad" "mid" "keys";
+}
+
+/* ---------- buttons ---------- */
+button {
+  font: inherit; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--ph); background:
+    repeating-linear-gradient(to bottom, var(--wash) 0 2px, transparent 2px 4px),
+    color-mix(in srgb, var(--ph) 4%, var(--bg));
+  border: 2px solid var(--ph); border-radius: 0;
+  box-shadow: 0 0 6px var(--glow), inset 0 0 10px color-mix(in srgb, var(--ph) 12%, transparent);
+  text-shadow: 0 0 6px var(--glow);
+  display: flex; align-items: center; justify-content: center; gap: 0.5em;
+  min-width: 0; min-height: 0; padding: 4px 6px;
+  font-size: clamp(13px, 3.6vw, 20px);
+  white-space: nowrap; overflow: hidden;
+  touch-action: none; cursor: pointer;
+}
+button.on, button:active { background: color-mix(in srgb, var(--ph) 28%, var(--bg)); }
+button .ico { font-size: 0.8em; opacity: 0.9; }
+button:disabled { opacity: 0.35; }
+
+.top { grid-area: top; display: grid; grid-template-columns: 0.8fr 1fr 0.9fr 1.1fr; gap: var(--gap); }
+.top button { height: clamp(40px, 6dvh, 56px); font-size: clamp(13px, 3.4vw, 18px); }
+
+.mid { grid-area: mid; display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+.mid button { height: clamp(52px, 8.5dvh, 90px); font-size: clamp(15px, 4.4vw, 22px); }
+
+.keys {
+  grid-area: keys; display: grid; gap: var(--gap);
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(3, clamp(62px, 11dvh, 120px));
+  grid-template-areas:
+    "scroll play volup   quick"
+    "scroll up   voldown kbd"
+    "left   down right   back";
+}
+.keys button { font-size: clamp(12px, 3.3vw, 18px); }
+.k-play { grid-area: play; white-space: normal; text-align: center; line-height: 1.15; } .k-up { grid-area: up; } .k-left { grid-area: left; }
+.k-down { grid-area: down; } .k-right { grid-area: right; }
+.k-quick { grid-area: quick; } .k-kbd { grid-area: kbd; } .k-back { grid-area: back; }
+.arrow { font-size: clamp(16px, 4.5vw, 24px) !important; }
+
+/* Volume rocker: one rounded pill split in two. */
+.k-volup, .k-voldown { flex-direction: column; gap: 2px; }
+.k-volup { grid-area: volup; border-radius: 22px 22px 6px 6px; }
+.k-voldown { grid-area: voldown; border-radius: 6px 6px 22px 22px; }
+.k-volup small, .k-voldown small { font-size: 0.75em; color: var(--dim); }
+.k-volup b, .k-voldown b { font-size: 1.6em; line-height: 1; }
+
+/* Scroll strip. */
+.scroll {
+  grid-area: scroll; position: relative;
+  border: 1.5px solid var(--faint);
+  background: repeating-linear-gradient(to bottom, transparent 0 calc(12.5% - 1px), var(--faint) calc(12.5% - 1px) 12.5%) 12% 0 / 76% 100% no-repeat,
+              color-mix(in srgb, var(--ph) 3%, var(--bg));
+  display: flex; flex-direction: column; align-items: center;
+  touch-action: none;
+}
+.scroll .lbl { margin-top: 8px; font-weight: 700; font-size: clamp(11px, 3vw, 15px); color: var(--dim); letter-spacing: 0.06em; }
+.scroll .hand { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 34%; max-width: 44px; opacity: 0.45; }
+.scroll.on { border-color: var(--ph); }
+
+/* ---------- touchpad ---------- */
+.pad {
+  grid-area: pad; position: relative; overflow: hidden;
+  border: 1.5px solid var(--faint);
+  background: color-mix(in srgb, var(--ph) 3%, var(--bg));
+  padding: 14px 18px; touch-action: none;
+}
+.pad .status { font-size: clamp(12px, 3.3vw, 16px); line-height: 1.5; pointer-events: none; }
+.pad .status .link { font-weight: 700; }
+.pad .status .link.off { color: var(--dim); }
+.pad .status .sub { color: var(--dim); }
+.pad .cross { position: absolute; top: 50%; left: 50%; width: 42px; height: 42px; transform: translate(-50%, -50%); opacity: 0.35; pointer-events: none; }
+.pad .cross::before, .pad .cross::after { content: ""; position: absolute; background: var(--ph); }
+.pad .cross::before { left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; }
+.pad .cross::after { top: 50%; left: 0; right: 0; height: 2px; margin-top: -1px; }
+.pad .log {
+  position: absolute; left: 18px; bottom: 12px; right: 40%;
+  font-size: clamp(11px, 3vw, 15px); line-height: 1.45; color: var(--dim);
+  pointer-events: none; overflow: hidden; max-height: 4.5em;
+}
+.pad .log div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pad .log div:last-child { color: var(--ph); }
+.pad .rclick { position: absolute; right: 18px; bottom: 18px; width: clamp(100px, 22vw, 150px); height: clamp(44px, 6dvh, 56px); }
+.pad.drag { border-color: var(--ph); }
+.dot { position: absolute; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; border: 1.5px solid var(--dim); pointer-events: none; opacity: 0; transition: opacity 120ms; }
+.dot.on { opacity: 1; }
+
+/* ---------- landscape: controls left, touchpad right ---------- */
+@media (orientation: landscape) and (min-width: 560px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
+    grid-template-rows: auto 1.1fr 3fr;
+    grid-template-areas: "top pad" "mid pad" "keys pad";
+    max-width: 1500px; margin: 0 auto;
+  }
+  .top button { height: clamp(34px, 9dvh, 56px); font-size: clamp(11px, 1.6vw, 18px); }
+  .mid button { height: auto; font-size: clamp(13px, 2vw, 22px); }
+  .keys { grid-template-rows: repeat(3, 1fr); }
+  .keys button { font-size: clamp(11px, 1.6vw, 18px); }
+  .arrow { font-size: clamp(14px, 2.2vw, 24px) !important; }
+  .pad .status { font-size: clamp(11px, 1.5vw, 16px); }
+  .pad .log { font-size: clamp(10px, 1.4vw, 15px); }
+  .pad .rclick { width: clamp(90px, 11vw, 150px); height: clamp(38px, 9dvh, 56px); }
+  .scroll .lbl { font-size: clamp(10px, 1.4vw, 15px); }
+}
+
+/* ---------- sheets (ACTIONS, QUICKPAD, KEYBOARD, POWER, SETUP, LEGEND) ---------- */
+.sheet {
+  position: fixed; inset: 0; z-index: 50; display: none;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+           max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+.sheet.open { display: flex; align-items: flex-end; justify-content: center; }
+.panel {
+  width: 100%; max-width: 760px; max-height: 100%;
+  overflow: auto; touch-action: pan-y; overscroll-behavior: contain;
+  background: var(--bg); border: 2px solid var(--ph); box-shadow: 0 0 14px var(--glow);
+  padding: 14px;
+}
+.panel header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.panel h2 { margin: 0; font-size: clamp(16px, 4.5vw, 22px); letter-spacing: 0.08em; text-shadow: 0 0 6px var(--glow); }
+.panel header button { height: 40px; padding: 0 14px; font-size: 15px; }
+.panel p, .panel li { color: var(--dim); font-size: 14px; line-height: 1.5; }
+.panel p b, .panel li b { color: var(--ph); }
+.panel ul { padding-left: 1.1em; margin: 0.4em 0; }
+.grid { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fill, minmax(min(140px, 42%), 1fr)); }
+.grid button { height: 58px; font-size: 15px; white-space: normal; text-align: center; line-height: 1.15; }
+.grid.small button { height: 50px; }
+.sec { margin: 14px 0 6px; color: var(--dim); font-size: 13px; letter-spacing: 0.1em; }
+.danger { border-style: dashed; }
+
+input, select {
+  font: inherit; font-size: 16px; /* 16px stops iOS zooming in */
+  color: var(--ph); background: color-mix(in srgb, var(--ph) 5%, var(--bg));
+  border: 2px solid var(--ph); border-radius: 0; padding: 10px 12px; width: 100%;
+  outline: none; -webkit-user-select: text; user-select: text; touch-action: manipulation;
+}
+input::placeholder { color: var(--faint); }
+label { display: block; color: var(--dim); font-size: 13px; letter-spacing: 0.08em; margin: 12px 0 6px; }
+.row { display: flex; gap: var(--gap); align-items: stretch; }
+.row > * { flex: 1; }
+.row button { height: 48px; }
+.check { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: 14px; margin: 12px 0; }
+.check input { width: 22px; height: 22px; accent-color: var(--ph); }
+input[type=range] { padding: 0; border: 0; accent-color: var(--ph); background: none; }
+
+.legend-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
+.legend-grid dt { font-weight: 700; white-space: nowrap; }
+.legend-grid dd { margin: 0; color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <div class="top">
+    <button id="btnClose" aria-label="Close window">[ X ]</button>
+    <button data-open="legend">LEGEND</button>
+    <button data-open="setup">SETUP</button>
+    <button id="btnPower" data-open="power"><span class="ico">&#x23FB;</span> POWER</button>
+  </div>
+
+  <div class="pad" id="pad">
+    <div class="status">
+      <div class="link off" id="linkLine">&#x25CB; NO LINK</div>
+      <div class="sub">&#x229F; TOUCH MODE</div>
+      <div class="sub">TAP = CLICK &middot; DRAG = MOVE</div>
+    </div>
+    <div class="cross"></div>
+    <div class="dot" id="dot"></div>
+    <div class="log" id="log"></div>
+    <button class="rclick" id="rclick">R-CLICK</button>
+  </div>
+
+  <div class="mid">
+    <button data-open="actions"><span class="ico">&#x25C6;</span> ACTIONS</button>
+    <button id="btnUnlock"><span class="ico">&#x25C8;</span> UNLOCK</button>
+  </div>
+
+  <div class="keys">
+    <div class="scroll" id="scroll">
+      <span class="lbl">SCROLL</span>
+      <svg class="hand" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 26V10a3 3 0 0 1 6 0v12m0-2a3 3 0 0 1 6 0v3m0-1a3 3 0 0 1 6 0v3m0-1a3 3 0 0 1 6 0v7c0 7-5 12-12 12h-2c-5 0-8-3-11-7l-5-7a3 3 0 0 1 4.5-4L18 30"/>
+        <path d="M8 16a12 12 0 0 1 4-8M6 22a17 17 0 0 1 2-10"/>
+      </svg>
+    </div>
+    <button class="k-play" data-media="PLAY_PAUSE"><span class="ico">&#x25B6;</span><span>PLAY/<wbr>PAUSE</span></button>
+    <button class="k-volup" data-media="VOLUME_INCREMENT" data-repeat><small>VOLUME</small><b>+</b></button>
+    <button class="k-quick" data-open="quickpad"><span class="ico">&#x229E;</span> QUICKPAD</button>
+    <button class="k-up arrow" data-key="UP_ARROW" data-repeat aria-label="Up">&#x25B2;</button>
+    <button class="k-voldown" data-media="VOLUME_DECREMENT" data-repeat><small>VOLUME</small><b>&minus;</b></button>
+    <button class="k-kbd" data-open="keyboard"><span class="ico">&#x25A4;</span> KEYBOARD</button>
+    <button class="k-left arrow" data-key="LEFT_ARROW" data-repeat aria-label="Left">&#x25C4;</button>
+    <button class="k-down arrow" data-key="DOWN_ARROW" data-repeat aria-label="Down">&#x25BC;</button>
+    <button class="k-right arrow" data-key="RIGHT_ARROW" data-repeat aria-label="Right">&#x25BA;</button>
+    <button class="k-back" data-key="ESCAPE">BACK/ESC</button>
+  </div>
+</div>
+
+<!-- ACTIONS -->
+<div class="sheet" id="sheet-actions"><div class="panel">
+  <header><h2>&#x25C6; ACTIONS</h2><button data-close>CLOSE</button></header>
+  <div class="grid" id="actionsGrid"></div>
+</div></div>
+
+<!-- QUICKPAD -->
+<div class="sheet" id="sheet-quickpad"><div class="panel">
+  <header><h2>&#x229E; QUICKPAD</h2><button data-close>CLOSE</button></header>
+  <div class="grid small" id="quickGrid"></div>
+</div></div>
+
+<!-- KEYBOARD -->
+<div class="sheet" id="sheet-keyboard"><div class="panel">
+  <header><h2>&#x25A4; KEYBOARD</h2><button data-close>CLOSE</button></header>
+  <div class="check"><input type="checkbox" id="kbLive" checked><span>LIVE &mdash; send each key as you type</span></div>
+  <div class="row">
+    <input id="kbInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" placeholder="TYPE HERE">
+    <button id="kbSend" style="flex:0 0 96px">ENTER</button>
+  </div>
+  <div class="sec">KEYS</div>
+  <div class="grid small" id="kbKeys"></div>
+</div></div>
+
+<!-- POWER -->
+<div class="sheet" id="sheet-power"><div class="panel">
+  <header><h2>&#x23FB; POWER</h2><button data-close>CLOSE</button></header>
+  <p>Hold a button for a second to confirm.</p>
+  <div class="grid" id="powerGrid"></div>
+</div></div>
+
+<!-- CLOSE WINDOW confirm -->
+<div class="sheet" id="sheet-closewin"><div class="panel">
+  <header><h2>[ X ] CLOSE WINDOW</h2><button data-close>CANCEL</button></header>
+  <p>Closes whatever is on screen right now (<b>Alt+F4</b>).</p>
+  <div class="row"><button id="closeYes" class="danger">CLOSE IT</button><button data-close>KEEP IT</button></div>
+</div></div>
+
+<!-- SETUP -->
+<div class="sheet" id="sheet-setup"><div class="panel">
+  <header><h2>SETUP</h2><button data-close>CLOSE</button></header>
+  <label for="setHost">PICO ADDRESS</label>
+  <div class="row">
+    <input id="setHost" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="couchcommander.local">
+    <button id="setConnect" style="flex:0 0 120px">CONNECT</button>
+  </div>
+  <label for="setSens">POINTER SPEED <span id="sensVal"></span></label>
+  <input id="setSens" type="range" min="0.4" max="4" step="0.1">
+  <label for="setAccel">POINTER ACCELERATION <span id="accelVal"></span></label>
+  <input id="setAccel" type="range" min="0" max="3" step="0.1">
+  <label for="setScroll">SCROLL SPEED <span id="scrollVal"></span></label>
+  <input id="setScroll" type="range" min="0.3" max="3" step="0.1">
+  <div class="check"><input type="checkbox" id="setInvert"><span>INVERT SCROLL</span></div>
+  <div class="check"><input type="checkbox" id="setHaptics"><span>VIBRATE ON PRESS (Android)</span></div>
+  <label for="setTheme">THEME</label>
+  <select id="setTheme"></select>
+</div></div>
+
+<!-- LEGEND -->
+<div class="sheet" id="sheet-legend"><div class="panel">
+  <header><h2>LEGEND</h2><button data-close>CLOSE</button></header>
+  <dl class="legend-grid">
+    <dt>TOUCHPAD</dt><dd>Drag one finger to move the pointer. Tap to click. Two-finger tap = right click. Two-finger drag = scroll. Tap then hold and drag = click-and-drag.</dd>
+    <dt>R-CLICK</dt><dd>Right click.</dd>
+    <dt>SCROLL</dt><dd>Drag up and down on the strip to scroll the page.</dd>
+    <dt>&#x25B2; &#x25C4; &#x25BC; &#x25BA;</dt><dd>Move around menus and the home screen. Hold to repeat.</dd>
+    <dt>PLAY/PAUSE</dt><dd>Plays/pauses video, and opens the highlighted tile on the home screen.</dd>
+    <dt>BACK/ESC</dt><dd>Goes back, and closes the open app on the home screen.</dd>
+    <dt>VOLUME</dt><dd>Turn the PC up or down. Hold to repeat.</dd>
+    <dt>ACTIONS</dt><dd>Home screen, switch apps, fullscreen, mute and more.</dd>
+    <dt>UNLOCK</dt><dd>Wakes the PC and gets past the lock screen.</dd>
+    <dt>KEYBOARD</dt><dd>Type into whatever is on screen with your phone's keyboard.</dd>
+    <dt>QUICKPAD</dt><dd>Keys a phone keyboard doesn't have: Tab, F11, Page Up and so on.</dd>
+    <dt>[ X ]</dt><dd>Close the window that's on screen.</dd>
+    <dt>POWER</dt><dd>Sleep, restart, shut down or lock the PC.</dd>
+  </dl>
+</div></div>
+
+<script>
+"use strict";
+
+/* ======================================================================
+   CONFIG — the parts you're most likely to tweak.
+   Key names are adafruit_hid Keycode names; media names are
+   ConsumerControlCode names. The Pico looks them up by name.
+   ====================================================================== */
+const CONFIG = {
+  defaultHost: "couchcommander.local",
+  wsPath: "/ws",
+  repeatDelay: 380,   // ms before a held d-pad/volume button starts repeating
+  repeatRate: 85,     // ms between repeats
+  tapMaxMs: 220,      // a touch shorter than this, that barely moved, is a tap
+  tapMaxMove: 9,      // px
+  scrollStep: 14,     // px of finger travel per wheel notch (before SCROLL SPEED)
+
+  // ACTIONS sheet. keys = pressed together; media = consumer key;
+  // steps = a sequence, with { wait: ms } between steps.
+  actions: [
+    { label: "HOME SCREEN", keys: ["CONTROL", "ALT", "SHIFT", "H"] },
+    { label: "SWITCH APPS", keys: ["CONTROL", "ALT", "SHIFT", "S"] },
+    { label: "FULLSCREEN", keys: ["F11"] },
+    { label: "VIDEO FULL (F)", keys: ["F"] },
+    { label: "MUTE", media: "MUTE" },
+    { label: "SUBTITLES (C)", keys: ["C"] },
+    { label: "PREV TRACK", media: "SCAN_PREVIOUS_TRACK" },
+    { label: "NEXT TRACK", media: "SCAN_NEXT_TRACK" },
+    { label: "SKIP BACK 10s", keys: ["J"] },
+    { label: "SKIP AHEAD 10s", keys: ["L"] },
+    { label: "ZOOM IN", keys: ["CONTROL", "EQUALS"] },
+    { label: "ZOOM OUT", keys: ["CONTROL", "MINUS"] },
+    { label: "RELOAD PAGE", keys: ["F5"] },
+    { label: "BROWSER BACK", keys: ["ALT", "LEFT_ARROW"] },
+    { label: "SHOW DESKTOP", keys: ["GUI", "D"] },
+    { label: "START MENU", keys: ["GUI"] },
+  ],
+
+  // QUICKPAD sheet: keys a phone keyboard doesn't give you.
+  quickpad: [
+    { label: "ESC", keys: ["ESCAPE"] },
+    { label: "ENTER", keys: ["ENTER"] },
+    { label: "SPACE", keys: ["SPACEBAR"] },
+    { label: "TAB", keys: ["TAB"], repeat: true },
+    { label: "SHIFT+TAB", keys: ["SHIFT", "TAB"], repeat: true },
+    { label: "ALT+TAB", keys: ["ALT", "TAB"] },
+    { label: "PAGE UP", keys: ["PAGE_UP"], repeat: true },
+    { label: "PAGE DOWN", keys: ["PAGE_DOWN"], repeat: true },
+    { label: "HOME", keys: ["HOME"] },
+    { label: "END", keys: ["END"] },
+    { label: "BACKSPACE", keys: ["BACKSPACE"], repeat: true },
+    { label: "DELETE", keys: ["DELETE"], repeat: true },
+    { label: "F5", keys: ["F5"] },
+    { label: "F11", keys: ["F11"] },
+    { label: "WIN", keys: ["GUI"] },
+    { label: "CTRL+W", keys: ["CONTROL", "W"] },
+  ],
+
+  // Extra keys under the KEYBOARD text box.
+  keyboardKeys: [
+    { label: "&#x232B; BKSP", keys: ["BACKSPACE"], repeat: true },
+    { label: "&#x23CE; ENTER", keys: ["ENTER"] },
+    { label: "TAB", keys: ["TAB"] },
+    { label: "ESC", keys: ["ESCAPE"] },
+    { label: "&#x25C4;", keys: ["LEFT_ARROW"], repeat: true },
+    { label: "&#x25BA;", keys: ["RIGHT_ARROW"], repeat: true },
+    { label: "&#x25B2;", keys: ["UP_ARROW"], repeat: true },
+    { label: "&#x25BC;", keys: ["DOWN_ARROW"], repeat: true },
+    { label: "SELECT ALL", keys: ["CONTROL", "A"] },
+    { label: "PASTE", keys: ["CONTROL", "V"] },
+  ],
+
+  // POWER sheet. Handled on the Pico so it can be switched off there.
+  power: [
+    { label: "SLEEP", power: "sleep" },
+    { label: "LOCK", power: "lock" },
+    { label: "RESTART", power: "restart" },
+    { label: "SHUT DOWN", power: "shutdown" },
+  ],
+};
+
+// Same list as CRTTheme.kt / Couch Launcher's Theme.cs.
+const THEMES = [
+  ["FALLOUT", "FALLOUT 84", "#00FF66", "#000000", 0.33],
+  ["AMBER", "AMBER ALERT", "#FFB000", "#000000", 0.33],
+  ["CYBER", "CYBER-BRUTALIST", "#00FFFF", "#000000", 0.33],
+  ["MATRIX", "MATRIX WHITE", "#FFFFFF", "#000000", 0.33],
+  ["RED_ALERT", "RED ALERT", "#F0113A", "#000000", 0.33],
+  ["HOT_PINK", "HOT PINK", "#F59BFF", "#000000", 0.33],
+  ["DEEP_PURPLE", "DEEP PURPLE", "#A855F7", "#000000", 0.33],
+  ["CGA_LCD", "CGA LCD", "#2E3A24", "#9DA982", 0],
+  ["SYNDICATE_LCD", "SYNDICATE LCD", "#1F2A3A", "#8D97A8", 0],
+  ["WHITE_LED_LCD", "WHITE LED LCD", "#9FC5FF", "#0E1E33", 0],
+  ["RED_LED_LCD", "RED LED LCD", "#FF3B30", "#1A0606", 0],
+  ["YG_BLUE_LCD", "Y/G BLUE LCD", "#148003", "#0A1B2E", 0],
+  ["LAVENDER_MOSS", "LAVENDER MOSS", "#A183C5", "#052009", 0],
+];
+
+/* ---------------- settings (per phone) ---------------- */
+const DEFAULTS = { host: "", sens: 1.6, accel: 1.2, scroll: 1, invert: false, haptics: true, theme: "FALLOUT" };
+const settings = Object.assign({}, DEFAULTS, (() => {
+  try { return JSON.parse(localStorage.getItem("couch.settings") || "{}"); } catch { return {}; }
+})());
+function saveSettings() {
+  try { localStorage.setItem("couch.settings", JSON.stringify(settings)); } catch {}
+}
+
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+
+/* ---------------- log ---------------- */
+const logEl = $("log");
+function log(text) {
+  const t = new Date().toTimeString().slice(0, 8);
+  const line = document.createElement("div");
+  line.textContent = `${t}  ${text}`;
+  logEl.appendChild(line);
+  while (logEl.children.length > 3) logEl.firstChild.remove();
+}
+
+/* ---------------- link to the Pico ---------------- */
+// Where the Pico is, best guess first:
+// - SETUP's address (or ?host=), when someone has set one
+// - served by Couch Launcher: the addresses it wrote in (IP, then .local name)
+// - served by the Pico itself: whoever served the page
+function hostCandidates() {
+  if (params.get("host")) return [params.get("host")];
+  if (settings.host) return [settings.host];
+  const fromLauncher = document.querySelector('meta[name="couch-pico"]')?.content || "";
+  const listed = fromLauncher.split(",").map((s) => s.trim()).filter(Boolean);
+  if (listed.length) return listed;
+  if (location.protocol === "http:" && location.host) return [location.host];
+  return [CONFIG.defaultHost];
+}
+let hostIndex = 0;
+function targetHost() {
+  const all = hostCandidates();
+  return all[hostIndex % all.length];
+}
+
+let ws = null, linked = false, retryMs = 1000, retryTimer = 0, pingTimer = 0;
+const linkLine = $("linkLine");
+
+function setLink(state, host) {
+  linked = state === "up";
+  linkLine.classList.toggle("off", !linked);
+  linkLine.textContent =
+    state === "up" ? `● LINKED PICO · ${host}` :
+    state === "connecting" ? `◌ LINKING · ${host}` :
+    `○ NO LINK · ${host}`;
+}
+
+function connect() {
+  clearTimeout(retryTimer);
+  if (ws) { ws.onclose = null; ws.close(); ws = null; }
+  const host = targetHost();
+  if (location.protocol === "https:") {
+    // Browsers block ws:// from an https:// page, and the Pico can't do https.
+    setLink("down", host);
+    log("OPEN OVER HTTP:// TO LINK");
+    return;
+  }
+  setLink("connecting", host);
+  log(`LINK » PICO · ${host}`);
+  let sock;
+  try { sock = new WebSocket(`ws://${host}${CONFIG.wsPath}`); }
+  catch (e) { log("BAD ADDRESS"); setLink("down", host); return; }
+  ws = sock;
+  let opened = false;
+  sock.onopen = () => {
+    opened = true;
+    retryMs = 1000;
+    setLink("up", host);
+    log("LINK ESTABLISHED");
+    clearInterval(pingTimer);
+    pingTimer = setInterval(() => send({ t: "ping" }, true), 5000);
+  };
+  sock.onmessage = (e) => {
+    let msg; try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.t === "hello") {
+      // The Pico says which of its optional features are switched on.
+      $("btnPower").disabled = msg.power === false;
+      $("btnUnlock").disabled = msg.unlock === false;
+    } else if (msg.t === "err") {
+      log(`PICO: ${String(msg.msg || "ERROR").toUpperCase()}`);
+    }
+  };
+  sock.onclose = () => {
+    clearInterval(pingTimer);
+    if (ws !== sock) return;
+    ws = null;
+    if (linked) log("LINK LOST");
+    setLink("down", host);
+    // Never got through: try the next address next time.
+    if (!opened) hostIndex++;
+    retryTimer = setTimeout(connect, retryMs);
+    retryMs = Math.min(retryMs * 2, 10000);
+  };
+}
+
+// quiet: don't log (pointer moves, pings).
+function send(msg, quiet) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+    return true;
+  }
+  if (!quiet) log("NO LINK — NOT SENT");
+  return false;
+}
+
+document.addEventListener("visibilitychange", () => {
+  // Phones kill sockets in the background; reconnect straight away on return.
+  if (document.visibilityState === "visible" && (!ws || ws.readyState > 1)) { retryMs = 1000; connect(); }
+});
+
+/* ---------------- sending keys ---------------- */
+function buzz() { if (settings.haptics && navigator.vibrate) navigator.vibrate(8); }
+
+const pretty = (s) => s.replace(/_ARROW$/, "").replace(/_/g, " ");
+function tapKeys(keys, quiet) {
+  if (send({ t: "key", k: keys }) && !quiet) log(`KEY » ${keys.map(pretty).join("+")}`);
+}
+function tapMedia(name, quiet) {
+  if (send({ t: "media", k: name }) && !quiet) log(`MEDIA » ${pretty(name)}`);
+}
+
+// Runs one CONFIG entry (action, quickpad key, power option...).
+async function run(item, quiet) {
+  if (item.keys) tapKeys(item.keys, quiet);
+  else if (item.media) tapMedia(item.media, quiet);
+  else if (item.text) { if (send({ t: "text", s: item.text })) log("TYPED TEXT"); }
+  else if (item.power) { if (send({ t: "power", a: item.power })) log(`POWER » ${item.power.toUpperCase()}`); }
+  else if (item.steps) {
+    log(`RUN » ${item.label}`);
+    for (const step of item.steps) {
+      if (step.wait) await new Promise((r) => setTimeout(r, step.wait));
+      else run(step, true);
+    }
+  }
+}
+
+// Press handling with optional hold-to-repeat. Pointer events so it works
+// the same for touch and mouse; capture keeps the release even if the
+// finger slides off.
+function bindPress(el, fire, repeat) {
+  let delay = 0, timer = 0;
+  const stop = () => { clearTimeout(delay); clearInterval(timer); el.classList.remove("on"); };
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    el.setPointerCapture?.(e.pointerId);
+    el.classList.add("on");
+    buzz();
+    fire(false);
+    if (repeat) delay = setTimeout(() => { timer = setInterval(() => fire(true), CONFIG.repeatRate); }, CONFIG.repeatDelay);
+  });
+  el.addEventListener("pointerup", stop);
+  el.addEventListener("pointercancel", stop);
+  el.addEventListener("lostpointercapture", stop);
+  el.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
+// Hold for `ms` before firing; for things you don't want to hit by accident.
+function bindHold(el, fire, ms = 900) {
+  let timer = 0;
+  const label = el.innerHTML;
+  const stop = () => { clearTimeout(timer); el.classList.remove("on"); el.innerHTML = label; };
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    el.setPointerCapture?.(e.pointerId);
+    el.classList.add("on");
+    el.textContent = "HOLD…";
+    timer = setTimeout(() => { buzz(); fire(); stop(); closeSheets(); }, ms);
+  });
+  el.addEventListener("pointerup", stop);
+  el.addEventListener("pointercancel", stop);
+  el.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
+function buildGrid(container, items, { hold = false, closeAfter = false } = {}) {
+  for (const item of items) {
+    const b = document.createElement("button");
+    b.innerHTML = item.label;
+    if (hold) b.classList.add("danger");
+    if (hold) bindHold(b, () => run(item));
+    else bindPress(b, (repeat) => { run(item, repeat); if (closeAfter && !repeat) setTimeout(closeSheets, 120); }, item.repeat);
+    container.appendChild(b);
+  }
+}
+
+/* main keypad */
+document.querySelectorAll("[data-key]").forEach((b) =>
+  bindPress(b, (repeat) => tapKeys([b.dataset.key], repeat), b.hasAttribute("data-repeat")));
+document.querySelectorAll("[data-media]").forEach((b) =>
+  bindPress(b, (repeat) => tapMedia(b.dataset.media, repeat), b.hasAttribute("data-repeat")));
+bindPress($("rclick"), () => { if (send({ t: "click", b: "right" })) log("R-CLICK"); });
+bindPress($("btnUnlock"), () => { if (send({ t: "unlock" })) log("UNLOCK » SENT"); });
+
+/* ---------------- sheets ---------------- */
+function openSheet(name) {
+  closeSheets();
+  $(`sheet-${name}`).classList.add("open");
+  if (name === "keyboard") setTimeout(() => $("kbInput").focus(), 50);
+}
+function closeSheets() {
+  document.querySelectorAll(".sheet.open").forEach((s) => s.classList.remove("open"));
+  document.activeElement?.blur?.();
+}
+document.querySelectorAll("[data-open]").forEach((b) =>
+  b.addEventListener("click", () => { buzz(); openSheet(b.dataset.open); }));
+document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", closeSheets));
+document.querySelectorAll(".sheet").forEach((s) =>
+  s.addEventListener("click", (e) => { if (e.target === s) closeSheets(); }));
+
+$("btnClose").addEventListener("click", () => { buzz(); openSheet("closewin"); });
+$("closeYes").addEventListener("click", () => { tapKeys(["ALT", "F4"]); closeSheets(); });
+
+buildGrid($("actionsGrid"), CONFIG.actions, { closeAfter: true });
+buildGrid($("quickGrid"), CONFIG.quickpad);
+buildGrid($("kbKeys"), CONFIG.keyboardKeys);
+buildGrid($("powerGrid"), CONFIG.power, { hold: true });
+
+/* ---------------- keyboard ---------------- */
+// LIVE mode keeps an invisible placeholder character in the box and looks
+// at what changed after each edit: anything after it was typed, and the
+// placeholder going missing means backspace. Mobile keyboards are too
+// inconsistent about key events for anything more direct.
+const kbInput = $("kbInput"), kbLive = $("kbLive");
+const SEED = "\u200B";
+function sendText(s) {
+  if (!s) return;
+  if (send({ t: "text", s })) log(`TYPE \u00BB ${s.length > 18 ? s.slice(0, 18) + "\u2026" : s}`);
+}
+function seed() {
+  kbInput.value = kbLive.checked ? SEED : "";
+  if (kbLive.checked) kbInput.setSelectionRange(1, 1);
+}
+function takeLive() {
+  const v = kbInput.value;
+  if (v === SEED) return;
+  if (!v.startsWith(SEED)) {
+    // Placeholder deleted: one backspace (plus anything typed over it).
+    tapKeys(["BACKSPACE"], true);
+    sendText(v.replaceAll(SEED, ""));
+  } else {
+    sendText(v.slice(1).replaceAll(SEED, ""));
+  }
+  seed();
+}
+kbInput.addEventListener("input", (e) => {
+  // Keyboards that build a word before committing it: wait for the word.
+  if (kbLive.checked && !e.isComposing) takeLive();
+});
+kbInput.addEventListener("compositionend", () => { if (kbLive.checked) setTimeout(takeLive, 0); });
+kbInput.addEventListener("focus", () => { if (kbLive.checked && !kbInput.value) seed(); });
+kbInput.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  if (kbLive.checked) { takeLive(); tapKeys(["ENTER"]); }
+  else { sendText(kbInput.value); kbInput.value = ""; }
+});
+$("kbSend").addEventListener("click", () => {
+  if (kbLive.checked) { takeLive(); tapKeys(["ENTER"]); }
+  else { sendText(kbInput.value); kbInput.value = ""; }
+  kbInput.focus();
+});
+kbLive.addEventListener("change", () => { seed(); kbInput.focus(); });
+kbLive.addEventListener("change", () => { $("kbSend").textContent = kbLive.checked ? "ENTER" : "SEND"; });
+
+/* ---------------- touchpad ---------------- */
+const pad = $("pad"), dot = $("dot");
+const touches = new Map();          // pointerId -> {x, y, startX, startY, t}
+let gesture = null;                 // "move" | "scroll2" | "drag"
+let maxTouches = 0, gestureStart = 0, moved = false;
+let lastTapEnd = 0, lastTapX = 0, lastTapY = 0;
+let accX = 0, accY = 0, accWheel = 0, flushQueued = false, scrollRemainder = 0;
+
+function queueFlush() {
+  if (flushQueued) return;
+  flushQueued = true;
+  requestAnimationFrame(() => {
+    flushQueued = false;
+    const x = Math.trunc(accX), y = Math.trunc(accY), v = Math.trunc(accWheel);
+    accX -= x; accY -= y; accWheel -= v;
+    if (x || y) send({ t: "move", x, y }, true);
+    if (v) send({ t: "scroll", v }, true);
+  });
+}
+
+// Pointer speed curve: slow drags are precise, fast flicks cross the screen.
+function gain(dx, dy, dt) {
+  const speed = Math.hypot(dx, dy) / Math.max(dt, 1); // px per ms
+  return settings.sens * (1 + settings.accel * Math.min(speed, 2.5));
+}
+
+function wheelFromFinger(dy) {
+  // Finger down = content follows down = wheel up (positive), like a phone.
+  scrollRemainder += dy * settings.scroll * (settings.invert ? -1 : 1);
+  const notches = Math.trunc(scrollRemainder / CONFIG.scrollStep);
+  scrollRemainder -= notches * CONFIG.scrollStep;
+  return notches;
+}
+
+pad.addEventListener("pointerdown", (e) => {
+  if (e.target.closest("button")) return;
+  e.preventDefault();
+  pad.setPointerCapture(e.pointerId);
+  const now = performance.now();
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: now });
+  if (touches.size === 1) {
+    maxTouches = 1; moved = false; gestureStart = now; scrollRemainder = 0;
+    // Tap, then touch again quickly near the same spot = hold the button down.
+    const near = Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY) < 40;
+    if (now - lastTapEnd < 260 && near) {
+      gesture = "drag";
+      lastTapEnd = 0;
+      send({ t: "press", b: "left" }, true);
+      pad.classList.add("drag");
+    } else {
+      gesture = "move";
+    }
+    const r = pad.getBoundingClientRect();
+    dot.style.left = `${e.clientX - r.left}px`; dot.style.top = `${e.clientY - r.top}px`;
+    dot.classList.add("on");
+  } else {
+    maxTouches = Math.max(maxTouches, touches.size);
+    if (gesture === "move") gesture = "scroll2";
+  }
+});
+
+pad.addEventListener("pointermove", (e) => {
+  const p = touches.get(e.pointerId);
+  if (!p) return;
+  e.preventDefault();
+  const now = performance.now();
+  const dx = e.clientX - p.x, dy = e.clientY - p.y, dt = now - p.t;
+  p.x = e.clientX; p.y = e.clientY; p.t = now;
+  if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) > CONFIG.tapMaxMove) moved = true;
+
+  const r = pad.getBoundingClientRect();
+  dot.style.left = `${e.clientX - r.left}px`; dot.style.top = `${e.clientY - r.top}px`;
+
+  if (gesture === "scroll2") {
+    // Two fingers: only follow the first one, so the wheel doesn't double up.
+    if (e.pointerId !== touches.keys().next().value) return;
+    accWheel += wheelFromFinger(dy);
+  } else {
+    const g = gain(dx, dy, dt);
+    accX += dx * g; accY += dy * g;
+  }
+  queueFlush();
+});
+
+function padEnd(e) {
+  if (!touches.has(e.pointerId)) return;
+  touches.delete(e.pointerId);
+  if (touches.size > 0) return;
+  dot.classList.remove("on");
+  const now = performance.now();
+  const quick = now - gestureStart < CONFIG.tapMaxMs + (maxTouches > 1 ? 80 : 0);
+  if (gesture === "drag") {
+    send({ t: "release", b: "left" }, true);
+    pad.classList.remove("drag");
+    if (!moved) { send({ t: "click", b: "left" }, true); log("DOUBLE CLICK"); }
+  } else if (!moved && quick && e.type !== "pointercancel") {
+    if (maxTouches >= 2) { send({ t: "click", b: "right" }); log("R-CLICK"); }
+    else {
+      send({ t: "click", b: "left" }, true);
+      log("CLICK");
+      lastTapEnd = now; lastTapX = e.clientX; lastTapY = e.clientY;
+    }
+  }
+  gesture = null;
+}
+pad.addEventListener("pointerup", padEnd);
+pad.addEventListener("pointercancel", padEnd);
+pad.addEventListener("contextmenu", (e) => e.preventDefault());
+
+/* ---------------- scroll strip ---------------- */
+const strip = $("scroll");
+let stripId = null, stripY = 0;
+strip.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  strip.setPointerCapture(e.pointerId);
+  stripId = e.pointerId; stripY = e.clientY; scrollRemainder = 0;
+  strip.classList.add("on"); buzz();
+});
+strip.addEventListener("pointermove", (e) => {
+  if (e.pointerId !== stripId) return;
+  const dy = e.clientY - stripY; stripY = e.clientY;
+  const v = wheelFromFinger(dy);
+  if (v) { accWheel += v; queueFlush(); }
+});
+const stripEnd = (e) => { if (e.pointerId === stripId) { stripId = null; strip.classList.remove("on"); } };
+strip.addEventListener("pointerup", stripEnd);
+strip.addEventListener("pointercancel", stripEnd);
+
+/* ---------------- setup ---------------- */
+function applyTheme() {
+  const t = THEMES.find((x) => x[0] === settings.theme) || THEMES[0];
+  const root = document.documentElement.style;
+  root.setProperty("--ph", t[2]); root.setProperty("--bg", t[3]); root.setProperty("--scan", t[4]);
+  document.querySelector('meta[name="theme-color"]').content = t[3];
+}
+const themeSel = $("setTheme");
+for (const t of THEMES) themeSel.add(new Option(t[1], t[0]));
+
+function bindRange(id, key, out) {
+  const el = $(id), show = () => { $(out).textContent = `· ${Number(settings[key]).toFixed(1)}`; };
+  el.value = settings[key]; show();
+  el.addEventListener("input", () => { settings[key] = Number(el.value); show(); saveSettings(); });
+}
+bindRange("setSens", "sens", "sensVal");
+bindRange("setAccel", "accel", "accelVal");
+bindRange("setScroll", "scroll", "scrollVal");
+for (const [id, key] of [["setInvert", "invert"], ["setHaptics", "haptics"]]) {
+  $(id).checked = settings[key];
+  $(id).addEventListener("change", () => { settings[key] = $(id).checked; saveSettings(); });
+}
+themeSel.value = settings.theme;
+themeSel.addEventListener("change", () => { settings.theme = themeSel.value; saveSettings(); applyTheme(); });
+
+$("setHost").value = settings.host;
+$("setHost").placeholder = targetHost();
+$("setConnect").addEventListener("click", () => {
+  settings.host = $("setHost").value.trim().replace(/^\w+:\/\//, "").replace(/\/.*$/, "");
+  saveSettings();
+  retryMs = 1000;
+  hostIndex = 0;
+  connect();
+  closeSheets();
+});
+
+// Stop iOS pinch-zoom and double-tap zoom on the controls.
+document.addEventListener("gesturestart", (e) => e.preventDefault());
+document.addEventListener("dblclick", (e) => e.preventDefault());
+
+applyTheme();
+connect();
+</script>
+</body>
+</html>
