@@ -75,6 +75,11 @@ sealed class LauncherConfig
     /// <summary>What TV-mode tiles claim to be. Here rather than hard-coded so
     /// it can be swapped if YouTube stops accepting this one.</summary>
     public string TvUserAgent { get; set; } = DefaultTvUserAgent;
+    /// <summary>Serve the phone remote page to guests on the Wi-Fi.</summary>
+    public bool PhoneRemote { get; set; } = true;
+    public int PhoneRemotePort { get; set; } = 80;
+    /// <summary>Where phones send their button presses: the Pico's name or IP.</summary>
+    public string PicoAddress { get; set; } = "couchcommander.local";
     public List<Tile> Tiles { get; set; } = new();
 
     static readonly JsonSerializerOptions Json = new()

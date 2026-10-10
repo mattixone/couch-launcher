@@ -15,11 +15,33 @@ A (Play/Pause) opens, B (Escape) closes an open app.
 
 Both can be changed in `config.json`.
 
+## Phone remote
+
+The launcher also serves the phone remote
+([CouchControllerWeb](https://github.com/mattixone/CouchControllerWeb)) so
+guests can drive the PC from their phone's browser. Settings › PHONE REMOTE
+shows a QR code and the address (e.g. `http://192.168.1.20`) for them to scan
+or type. ◄► on that row turns it off.
+
+Only the page comes from here; the phone then talks straight to the Pico, so
+the launcher writes the Pico's address into the page on the way out (looked up
+from `couchcommander.local`, so phones that can't do `.local` names still find it).
+
+- The first time it starts, Windows Firewall asks whether to allow Couch
+  Launcher. Allow it on **private networks**, or phones can't connect. (If the
+  prompt hid behind the launcher, allow it in Windows Security › Firewall ›
+  Allow an app.) The Wi-Fi needs to be set to a private network in Windows.
+- `config.json`: `PhoneRemote` (on/off), `PhoneRemotePort` (80; falls back to
+  8080 if taken), `PicoAddress` (`couchcommander.local`, or a fixed IP).
+- The page is built into the app; `release.sh` fetches the latest from
+  CouchControllerWeb each release. To try changes without releasing, put an
+  `index.html` in `CouchLauncherData\web\`. It's used instead, straight away.
+
 ## Where things live on the PC
 
 - App: `%LocalAppData%\CouchLauncher` (managed by the installer; replaced on update)
 - Settings, log, icons, browser sign-ins: `%LocalAppData%\CouchLauncherData`
-  - `config.json`: tiles, theme, shortcuts
+  - `config.json`: tiles, theme, shortcuts, phone remote
   - `launcher.log`: first place to look when something misbehaves
 
 ## Releasing (on the Mac)

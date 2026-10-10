@@ -3,7 +3,7 @@ using System.Windows.Controls;
 
 namespace CouchLauncher.Ui;
 
-/// <summary>Theme, start-with-Windows, tile editing, updates. D-pad friendly.</summary>
+/// <summary>Theme, start-with-Windows, phone remote, tile editing, updates. D-pad friendly.</summary>
 sealed class SettingsScreen : Screen
 {
     sealed record Row(Func<string> Label, Action Select, Action<int>? Adjust = null);
@@ -21,6 +21,9 @@ sealed class SettingsScreen : Screen
                 () => Host.SetTheme(Host.Palette.Next),
                 step => Host.SetTheme(step > 0 ? Host.Palette.Next : Host.Palette.Previous)),
             new(() => $"START WITH WINDOWS:  {(Host.Config.StartAtLogin ? "ON" : "OFF")}", ToggleStartup),
+            new(() => $"PHONE REMOTE   ◄ {(Host.Config.PhoneRemote ? "ON" : "OFF")} ►",
+                () => Host.ShowModal(new PhoneRemoteModal(Host)),
+                _ => TogglePhoneRemote()),
             new(() => "EDIT TILES", () => Host.ShowScreen(new EditorScreen(Host))),
             new(() => "CHECK FOR UPDATES", CheckForUpdates),
             new(() => "EXIT THE LAUNCHER", ConfirmExit),
@@ -125,6 +128,15 @@ sealed class SettingsScreen : Screen
         Host.Config.Save();
         LoginStartup.Apply(Host.Config.StartAtLogin);
         note = Updater.IsInstalled ? "" : "(START WITH WINDOWS ONLY APPLIES TO THE INSTALLED APP)";
+        Host.RebuildScreen();
+    }
+
+    void TogglePhoneRemote()
+    {
+        Host.Config.PhoneRemote = !Host.Config.PhoneRemote;
+        Host.Config.Save();
+        WebRemote.Apply(Host.Config);
+        note = WebRemote.Problem.Length > 0 ? $"(PHONE REMOTE {WebRemote.Problem})" : "";
         Host.RebuildScreen();
     }
 

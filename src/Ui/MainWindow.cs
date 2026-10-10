@@ -75,6 +75,7 @@ sealed class MainWindow : Window
             Native.UnregisterHotKey(hwnd, HotkeyHome);
             Native.UnregisterHotKey(hwnd, HotkeySwitch);
             MediaKeyRemap.Remove();
+            WebRemote.Stop();
         };
         Application.Current.SessionEnding += (_, _) => allowClose = true;
         ticker.Tick += (_, _) => Tick();
@@ -94,6 +95,7 @@ sealed class MainWindow : Window
         Log.Write($"launcher v{Updater.Version} started");
         LoginStartup.Apply(Config.StartAtLogin);
         MediaKeyRemap.Install(AShouldSelect);
+        WebRemote.Apply(Config);
         BringToFront();
         await Apps.DiscoverAsync();
         Apps.Refresh();
