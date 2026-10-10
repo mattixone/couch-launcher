@@ -1,0 +1,93 @@
+# Builds Couch Launcher and publishes it as a GitHub release, the same as
+# release.sh but on GitHub's machines, so no Mac is needed.
+#
+# Start it from the repo's Actions tab (or the GitHub app): Release > Run workflow.
+# Leave the version empty for the next one (1.0.4 -> 1.0.5).
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (empty = next one)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      GH_TOKEN: ${{ github.token }}
+      REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          # 10 builds the app; vpk (pinned in .config/dotnet-tools.json) runs on 8.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Pick the version
+        id: version
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          if [ -n "$REQUESTED" ]; then
+            VERSION="${REQUESTED#v}"
+            if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Version should look like 1.2.3, got '$REQUESTED'"
+              exit 1
+            fi
+          else
+            LAST="$(gh release list --limit 1 --exclude-drafts --json tagName -q '.[0].tagName' 2>/dev/null || true)"
+            if [ -z "$LAST" ]; then
+              VERSION="1.0.0"
+            else
+              LAST="${LAST#v}"
+              VERSION="${LAST%.*}.$(( ${LAST##*.} + 1 ))"
+            fi
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "==> Couch Launcher $VERSION -> $REPO_URL"
+
+      - name: Fetch the latest phone remote page
+        run: |
+          if curl -fsSL "https://raw.githubusercontent.com/mattixone/CouchControllerWeb/main/www/index.html" -o web/index.html.new; then
+            mv web/index.html.new web/index.html
+          else
+            rm -f web/index.html.new
+            echo "::warning::Couldn't fetch the phone remote page; using the copy in web/"
+          fi
+
+      - name: Build
+        run: >
+          dotnet publish CouchLauncher.csproj -c Release -r win-x64 --self-contained true
+          -o build/publish -p:Version="${{ steps.version.outputs.version }}" -p:UpdateRepo="$REPO_URL"
+
+      - name: Package and publish
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          dotnet tool restore
+          # The previous release, so this one can ship as a small "what changed" update.
+          dotnet vpk download github --repoUrl "$REPO_URL" --channel win -o build/releases || true
+          dotnet vpk pack --packId CouchLauncher --packVersion "$VERSION" \
+            --packDir build/publish --mainExe CouchLauncher.exe \
+            --packTitle "Couch Launcher" --packAuthors "Couch Commander" --channel win -o build/releases
+          dotnet vpk upload github --repoUrl "$REPO_URL" --channel win -o build/releases --publish \
+            --releaseName "Couch Launcher $VERSION" --tag "v$VERSION" --token "$GH_TOKEN"
+          echo "### Released Couch Launcher $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "Installer: $REPO_URL/releases/latest/download/CouchLauncher-win-Setup.exe" >> "$GITHUB_STEP_SUMMARY"
