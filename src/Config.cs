@@ -80,6 +80,8 @@ sealed class LauncherConfig
     public int PhoneRemotePort { get; set; } = 80;
     /// <summary>Where phones send their button presses: the Pico's name or IP.</summary>
     public string PicoAddress { get; set; } = "couchcommander.local";
+    /// <summary>Let the phone remote's POWER menu sleep, restart or shut down the PC.</summary>
+    public bool PhoneRemotePower { get; set; } = true;
     public List<Tile> Tiles { get; set; } = new();
 
     static readonly JsonSerializerOptions Json = new()
