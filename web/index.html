@@ -323,7 +323,7 @@ input[type=range] { padding: 0; border: 0; accent-color: var(--ph); background: 
     <dt>BACK/ESC</dt><dd>Goes back, and closes the open app on the home screen.</dd>
     <dt>VOLUME</dt><dd>Turn the PC up or down. Hold to repeat.</dd>
     <dt>ACTIONS</dt><dd>Home screen, switch apps, fullscreen, mute and more.</dd>
-    <dt>UNLOCK</dt><dd>Wakes the PC and gets past the lock screen.</dd>
+    <dt>UNLOCK</dt><dd>Wakes the PC and gets past the lock screen. Needs the Pico, so it's greyed out when linked to the PC.</dd>
     <dt>KEYBOARD</dt><dd>Type into whatever is on screen with your phone's keyboard.</dd>
     <dt>QUICKPAD</dt><dd>Keys a phone keyboard doesn't have: Tab, F11, Page Up and so on.</dd>
     <dt>[ X ]</dt><dd>Close the window that's on screen.</dd>
@@ -454,13 +454,15 @@ function log(text) {
 /* ---------------- link to the Pico ---------------- */
 // Where the Pico is, best guess first:
 // - SETUP's address (or ?host=), when someone has set one
-// - served by Couch Launcher: the addresses it wrote in (IP, then .local name)
+// - served by Couch Launcher: the addresses it wrote in, in the order to try
+//   them ("@self" = the launcher itself, which presses keys from Windows)
 // - served by the Pico itself: whoever served the page
 function hostCandidates() {
   if (params.get("host")) return [params.get("host")];
   if (settings.host) return [settings.host];
   const fromLauncher = document.querySelector('meta[name="couch-pico"]')?.content || "";
-  const listed = fromLauncher.split(",").map((s) => s.trim()).filter(Boolean);
+  const listed = fromLauncher.split(",").map((s) => s.trim()).filter(Boolean)
+    .map((h) => (h === "@self" ? location.host : h));
   if (listed.length) return listed;
   if (location.protocol === "http:" && location.host) return [location.host];
   return [CONFIG.defaultHost];
@@ -472,13 +474,14 @@ function targetHost() {
 }
 
 let ws = null, linked = false, retryMs = 1000, retryTimer = 0, pingTimer = 0;
+let peer = "PICO";   // who answered: the Pico, or Couch Launcher on the PC
 const linkLine = $("linkLine");
 
 function setLink(state, host) {
   linked = state === "up";
   linkLine.classList.toggle("off", !linked);
   linkLine.textContent =
-    state === "up" ? `● LINKED PICO · ${host}` :
+    state === "up" ? `● LINKED ${peer} · ${host}` :
     state === "connecting" ? `◌ LINKING · ${host}` :
     `○ NO LINK · ${host}`;
 }
@@ -500,8 +503,11 @@ function connect() {
   catch (e) { log("BAD ADDRESS"); setLink("down", host); return; }
   ws = sock;
   let opened = false;
+  // An address that doesn't exist can take ages to fail; move on after a bit.
+  const giveUp = setTimeout(() => { if (!opened) sock.close(); }, 3500);
   sock.onopen = () => {
     opened = true;
+    clearTimeout(giveUp);
     retryMs = 1000;
     setLink("up", host);
     log("LINK ESTABLISHED");
@@ -511,7 +517,9 @@ function connect() {
   sock.onmessage = (e) => {
     let msg; try { msg = JSON.parse(e.data); } catch { return; }
     if (msg.t === "hello") {
-      // The Pico says which of its optional features are switched on.
+      peer = msg.name === "launcher" ? "PC" : "PICO";
+      setLink("up", host);
+      // Which optional features are on. UNLOCK only works through the Pico.
       $("btnPower").disabled = msg.power === false;
       $("btnUnlock").disabled = msg.unlock === false;
     } else if (msg.t === "err") {
@@ -520,6 +528,7 @@ function connect() {
   };
   sock.onclose = () => {
     clearInterval(pingTimer);
+    clearTimeout(giveUp);
     if (ws !== sock) return;
     ws = null;
     if (linked) log("LINK LOST");
@@ -663,20 +672,20 @@ function sendText(s) {
   if (!s) return;
   if (send({ t: "text", s })) log(`TYPE \u00BB ${s.length > 18 ? s.slice(0, 18) + "\u2026" : s}`);
 }
+let seeded = false;   // the placeholder was in the box before this edit
 function seed() {
   kbInput.value = kbLive.checked ? SEED : "";
+  seeded = kbLive.checked;
   if (kbLive.checked) kbInput.setSelectionRange(1, 1);
 }
 function takeLive() {
   const v = kbInput.value;
   if (v === SEED) return;
-  if (!v.startsWith(SEED)) {
-    // Placeholder deleted: one backspace (plus anything typed over it).
-    tapKeys(["BACKSPACE"], true);
-    sendText(v.replaceAll(SEED, ""));
-  } else {
-    sendText(v.slice(1).replaceAll(SEED, ""));
-  }
+  // The placeholder still there means text was typed (on either side of it,
+  // depending on where the cursor was). Gone means backspace, unless it was
+  // never put in, when typing beat the box being set up.
+  if (!v.includes(SEED) && seeded) tapKeys(["BACKSPACE"], true);
+  sendText(v.replaceAll(SEED, ""));
   seed();
 }
 kbInput.addEventListener("input", (e) => {

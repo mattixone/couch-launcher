@@ -23,16 +23,22 @@ guests can drive the PC from their phone's browser. Settings › PHONE REMOTE
 shows a QR code and the address (e.g. `http://192.168.1.20`) for them to scan
 or type. ◄► on that row turns it off.
 
-Only the page comes from here; the phone then talks straight to the Pico, so
-the launcher writes the Pico's address into the page on the way out (looked up
-from `couchcommander.local`, so phones that can't do `.local` names still find it).
+Button presses go to the Pico when it's running the web remote (it's a real
+USB keyboard, so UNLOCK works at the lock screen). Until then, or whenever
+the Pico doesn't answer, the launcher presses the keys itself from Windows.
+Everything works that way except UNLOCK, since Windows ignores apps' key
+presses on the lock screen and admin prompts. The page's status line says
+`LINKED PICO` or `LINKED PC` so you can tell which. The launcher checks for
+the Pico in the background, and once it answers, pages try it first. The
+Retroid's link to the Pico isn't involved either way.
 
 - The first time it starts, Windows Firewall asks whether to allow Couch
   Launcher. Allow it on **private networks**, or phones can't connect. (If the
   prompt hid behind the launcher, allow it in Windows Security › Firewall ›
   Allow an app.) The Wi-Fi needs to be set to a private network in Windows.
 - `config.json`: `PhoneRemote` (on/off), `PhoneRemotePort` (80; falls back to
-  8080 if taken), `PicoAddress` (`couchcommander.local`, or a fixed IP).
+  8080 if taken), `PicoAddress` (`couchcommander.local`, or a fixed IP),
+  `PhoneRemotePower` (let guests sleep/restart/shut down the PC).
 - The page is built into the app; `release.sh` fetches the latest from
   CouchControllerWeb each release. To try changes without releasing, put an
   `index.html` in `CouchLauncherData\web\`. It's used instead, straight away.

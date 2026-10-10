@@ -95,6 +95,10 @@ sealed class MainWindow : Window
         Log.Write($"launcher v{Updater.Version} started");
         LoginStartup.Apply(Config.StartAtLogin);
         MediaKeyRemap.Install(AShouldSelect);
+        PhoneInput.ASelects = () => Dispatcher.Invoke(AShouldSelect);
+        PhoneInput.AllowPower = Config.PhoneRemotePower;
+        WebRemote.Handler = PhoneInput.Handle;
+        WebRemote.Disconnected = PhoneInput.ReleaseAll;
         WebRemote.Apply(Config);
         BringToFront();
         await Apps.DiscoverAsync();
