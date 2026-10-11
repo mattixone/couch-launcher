@@ -23,6 +23,9 @@ sealed class Tile
     /// <summary>Tells the site we're a smart TV. youtube.com/tv only shows its
     /// TV interface to TVs and redirects everything else.</summary>
     public bool TvMode { get; set; }
+    /// <summary>For sites couch mode knows (see SiteScripts): the TV look,
+    /// channel bar and D-pad controls. Off = the site exactly as it comes.</summary>
+    public bool CouchMode { get; set; } = true;
 
     // --- App ---
     /// <summary>Program to run: an .exe, or a steam:// style link.</summary>
@@ -41,11 +44,12 @@ sealed class Tile
     public bool Hidden { get; set; }
 
     /// <summary>What the Retroid's A button (a Play/Pause media key) does while
-    /// this tile's app is in front: null = automatic (Enter for TV-mode tiles),
+    /// this tile's app is in front: null = automatic (Enter for TV-mode and
+    /// couch-mode tiles),
     /// true = press Enter instead, false = leave it as Play/Pause. Menus in
     /// apps like YouTube TV only respond to Enter.</summary>
     public bool? ASelects { get; set; }
-    [JsonIgnore] public bool AButtonSelects => ASelects ?? TvMode;
+    [JsonIgnore] public bool AButtonSelects => ASelects ?? (TvMode || SiteScripts.Enhances(this));
 
     /// <summary>Close any extra windows the app opens. Turn off while signing
     /// in for the first time — some logins happen in a pop-up.</summary>

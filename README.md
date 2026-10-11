@@ -43,11 +43,59 @@ Retroid's link to the Pico isn't involved either way.
   CouchControllerWeb each release. To try changes without releasing, put an
   `index.html` in `CouchLauncherData\web\`. It's used instead, straight away.
 
+## Couch mode (live TV on ABC iview)
+
+Web tiles for sites couch mode knows (so far **ABC iview**) behave like a TV
+app instead of a website. iview's own player still does the playing, so your
+sign-in and the site's copy protection work as normal. Couch mode only changes
+what's on screen and what the buttons do:
+
+- As soon as something plays, the video fills the screen and the rest of the
+  page is hidden. A channel bar in your launcher theme shows the channel and
+  the time.
+- **On live TV:** ▲▼ change channel, ◄ goes back to the last channel, A shows
+  the channel bar, B opens the channel list.
+- **In the channel list:** ▲▼ move, A watches, B closes. At the bottom,
+  *FIND MORE CHANNELS…* opens iview's live page so couch mode can find the
+  rest, and *ABC IVIEW'S OWN SCREEN* shows the normal site until you leave
+  that page.
+- **On a show or film:** A plays/pauses, ◄► jump 10 seconds, ▼ opens the
+  channel list, B leaves the player the site's own way.
+
+ABC TV and ABC ENTERTAINS are in the list from the start. Open FIND MORE
+CHANNELS once and ABC NEWS, ABC KIDS and ABC FAMILY are added under the
+names iview gives them. The state versions of ABC TV are left out.
+
+To open straight onto live TV, set the tile's address to
+`https://iview.abc.net.au/show/abc-live-stream`. Opening any channel's page
+starts that channel. The first time a channel plays, couch mode remembers
+where its player is, and after that it goes straight there.
+
+- **Setting up:** nothing to do for a tile whose address is on
+  `iview.abc.net.au`. It's on by default, with A set to Select. Settings ›
+  Edit tiles › COUCH MODE turns it off. Close the tile and open it again
+  after changing it. A tile that was already open before you updated the
+  launcher needs closing and opening once.
+- **How it works:** the launcher starts the tile's browser with its DevTools
+  connection switched on (the one automation tools use), and puts couch
+  mode's script into each page the tile opens. This only works because each
+  tile has its own browser profile, and the connection is only reachable from
+  the PC itself, never the network.
+- **When iview changes and something stops working:** `launcher.log` has a
+  line for each step (channel found, play button pressed, TV look on/off,
+  which copy protection the site asked for). The scripts are `sites/*.js` in
+  this repo. To try a fix without releasing, put an edited copy in
+  `CouchLauncherData\sites\` and it's used from the next page load.
+- **Settings › DRM CHECK** shows whether WebView2 (the browser engine apps
+  can build in) could play these sites. Compare it with the copy protection
+  the log says each site asks for.
+
 ## Where things live on the PC
 
 - App: `%LocalAppData%\CouchLauncher` (managed by the installer; replaced on update)
 - Settings, log, icons, browser sign-ins: `%LocalAppData%\CouchLauncherData`
   - `config.json`: tiles, theme, shortcuts, phone remote
+  - `sites\`: optional local copies of couch mode's scripts, used instead of the built-in ones
   - `launcher.log`: first place to look when something misbehaves
 
 ## Releasing

@@ -26,6 +26,7 @@ sealed class SettingsScreen : Screen
                 _ => TogglePhoneRemote()),
             new(() => "EDIT TILES", () => Host.ShowScreen(new EditorScreen(Host))),
             new(() => "CHECK FOR UPDATES", CheckForUpdates),
+            new(() => "DRM CHECK", CheckDrm),
             new(() => "EXIT THE LAUNCHER", ConfirmExit),
         };
     }
@@ -72,6 +73,7 @@ sealed class SettingsScreen : Screen
         if (note.Length > 0)
         {
             var noteText = Crt.Text(note, 24, 0.9);
+            noteText.TextWrapping = TextWrapping.Wrap;
             noteText.Margin = new Thickness(4, 10, 0, 0);
             list.Children.Add(noteText);
         }
@@ -145,6 +147,14 @@ sealed class SettingsScreen : Screen
         note = "CHECKING…";
         Host.RebuildScreen();
         note = await Host.RunUpdate(automatic: false);
+        Host.RebuildScreen();
+    }
+
+    async void CheckDrm()
+    {
+        note = "CHECKING…";
+        Host.RebuildScreen();
+        note = await DrmCheck.RunAsync(new System.Windows.Interop.WindowInteropHelper(Host).Handle);
         Host.RebuildScreen();
     }
 
