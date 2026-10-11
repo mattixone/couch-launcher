@@ -139,6 +139,11 @@ sealed class EditorScreen : Screen
                 fields.Children.Add(Field("TV MODE", Chips(
                     (tile.TvMode ? "ON" : "OFF", tile.TvMode, () => { tile.TvMode = !tile.TvMode; RebuildForm(); })),
                     "Pretends to be a smart TV. Needed for youtube.com/tv, which otherwise redirects."));
+                var sites = string.Join(", ", SiteScripts.All.Select(s => s.Label));
+                fields.Children.Add(Field("COUCH MODE", Chips(
+                    (tile.CouchMode ? "ON" : "OFF", tile.CouchMode, () => { tile.CouchMode = !tile.CouchMode; RebuildForm(); })),
+                    $"Live TV the couch way: full-screen video, a channel bar, and ▲▼ to change channel. Works on {sites}" +
+                    (SiteScripts.For(tile.Url) == null ? " (not this address)." : ". Close and reopen the tile after changing it.")));
                 break;
 
             case TileKind.App:
@@ -168,7 +173,7 @@ sealed class EditorScreen : Screen
         fields.Children.Add(Field("A BUTTON", Chips(
             ("PLAY / PAUSE", !tile.AButtonSelects, () => { tile.ASelects = false; RebuildForm(); }),
             ("SELECT (ENTER)", tile.AButtonSelects, () => { tile.ASelects = true; RebuildForm(); })),
-            "What the Retroid's A button does inside this app. Choose SELECT for apps you steer with the D-pad, like YouTube TV (TV-mode tiles do this already)."));
+            "What the Retroid's A button does inside this app. Choose SELECT for apps you steer with the D-pad, like YouTube TV (TV-mode and couch-mode tiles do this already)."));
 
         fields.Children.Add(Field("POP-UP WINDOWS", Chips(
             (tile.BlockPopups ? "BLOCKED" : "ALLOWED", tile.BlockPopups, () => { tile.BlockPopups = !tile.BlockPopups; RebuildForm(); })),
