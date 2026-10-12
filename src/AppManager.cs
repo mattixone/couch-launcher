@@ -412,6 +412,31 @@ sealed class AppManager
                     await PushSurferAsync(r);
                     break;
                 }
+                case "rename":
+                {
+                    int index = Number("index");
+                    var name = Text("name").Trim();
+                    if (index < 0 || index >= tile.Channels.Count || name.Length == 0) return;
+                    Log.Write($"{tile.Name}: channel {index + 1} renamed {tile.Channels[index].Name} → {name}");
+                    tile.Channels[index].Name = name.Length > 40 ? name[..40] : name;
+                    config.Save();
+                    await PushSurferAsync(r);
+                    break;
+                }
+                case "volume":
+                {
+                    var level = SystemVolume.Step(Math.Sign(Number("step")));
+                    if (level is { } v)
+                        await bridge.EvaluateAsync(session, $"window.__couchVolume && window.__couchVolume({v.Percent}, {(v.Muted ? "true" : "false")})");
+                    break;
+                }
+                case "guide":
+                {
+                    var guide = await TvGuide.GetAsync(tile.GuideUrl);
+                    var json = System.Text.Json.JsonSerializer.Serialize(GuideForPage(tile, guide));
+                    await bridge.EvaluateAsync(session, $"window.__couchGuide && window.__couchGuide({json})");
+                    break;
+                }
                 case "remove":
                 {
                     int index = Number("index");
@@ -435,6 +460,38 @@ sealed class AppManager
 
         // After channel <removed> is taken out: the same channel's new number.
         static int Shift(int channel, int removed) => channel == removed ? -1 : channel > removed ? channel - 1 : channel;
+    }
+
+    /// <summary>
+    /// The guide as a Live Surfer page wants it: for each of the tile's
+    /// channels, in order, its shows from an hour ago to a day ahead.
+    /// </summary>
+    static object GuideForPage(Tile tile, TvGuide? guide)
+    {
+        var from = DateTimeOffset.UtcNow.AddHours(-1);
+        var until = DateTimeOffset.UtcNow.AddHours(24);
+        return new
+        {
+            ok = guide != null,
+            source = tile.GuideUrl,
+            channels = tile.Channels.Select(c =>
+            {
+                var match = guide?.Match(c.Name, c.GuideId);
+                var shows = match == null ? Enumerable.Empty<TvGuide.Programme>() : guide!.For(match.Id).Where(p => p.Stop > from && p.Start < until);
+                return new
+                {
+                    guide = match?.Name,
+                    shows = shows.Select(p => new
+                    {
+                        start = p.Start.ToUnixTimeMilliseconds(),
+                        stop = p.Stop.ToUnixTimeMilliseconds(),
+                        title = p.Title,
+                        episode = p.Episode,
+                        desc = p.Description.Length > 400 ? p.Description[..400] + "…" : p.Description,
+                    }),
+                };
+            }),
+        };
     }
 
     void Focus(TileRuntime r, bool userAction)

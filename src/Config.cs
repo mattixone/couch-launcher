@@ -29,6 +29,8 @@ sealed class Tile
     public List<LiveChannel> Channels { get; set; } = new();
     /// <summary>The channel it was on last, which it opens on next time.</summary>
     public int LastChannel { get; set; }
+    /// <summary>The TV guide (an XMLTV file) for the channel bar and the guide grid. Empty = none.</summary>
+    public string GuideUrl { get; set; } = TvGuide.DefaultUrl;
 
     // --- App ---
     /// <summary>Program to run: an .exe, or a steam:// style link.</summary>
@@ -70,6 +72,8 @@ sealed class LiveChannel
 {
     public string Name { get; set; } = "";
     public string Url { get; set; } = "";
+    /// <summary>Its channel in the TV guide: empty = matched by name, "none" = no guide.</summary>
+    public string GuideId { get; set; } = "";
 }
 
 /// <summary>The two tiles every home screen ends with. Not saved or editable.</summary>

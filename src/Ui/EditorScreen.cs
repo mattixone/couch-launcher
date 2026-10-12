@@ -166,6 +166,7 @@ sealed class EditorScreen : Screen
                 break;
 
             case TileKind.LiveSurfer:
+                LoadGuide(tile);
                 AddSurferFields(fields, tile);
                 break;
         }
@@ -201,6 +202,25 @@ sealed class EditorScreen : Screen
             (s.Name, tile.Url == s.Url, (Action)(() => { tile.Url = s.Url; RebuildForm(); }))).ToArray()));
         fields.Children.Add(Field("START PAGE", startPage, "Where it opens until it has channels. After that it opens on the last channel you watched."));
 
+        var guideField = new StackPanel();
+        guideField.Children.Add(Crt.Input(tile.GuideUrl, value => { tile.GuideUrl = value.Trim(); guideNote = ""; }));
+        foreach (var source in TvGuide.Sources)
+        {
+            var cities = Chips(TvGuide.Cities.Select(city =>
+            {
+                var url = string.Format(source.Pattern, city);
+                return ($"{source.Label} {city.ToUpperInvariant()}", tile.GuideUrl == url,
+                        (Action)(() => { tile.GuideUrl = url; guideNote = ""; RebuildForm(); }));
+            }).ToArray());
+            guideField.Children.Add(cities);
+        }
+        guideField.Children.Add(Chips(
+            ("NO GUIDE", tile.GuideUrl.Length == 0, () => { tile.GuideUrl = ""; RebuildForm(); }),
+            ("CHECK IT", false, () => CheckGuide(tile))));
+        fields.Children.Add(Field("TV GUIDE", guideField,
+            guideNote.Length > 0 ? guideNote :
+            "What's on, for the channel bar and the guide (A twice while watching). Pick your city; if one source stops updating, try the other."));
+
         var list = new StackPanel();
         if (tile.Channels.Count == 0)
             list.Children.Add(Crt.Text("NONE YET", 22, 0.6));
@@ -221,7 +241,10 @@ sealed class EditorScreen : Screen
             address.FontSize = 18;
             address.Margin = new Thickness(52, 6, 0, 0);
             row.Children.Add(address);
+            var guideName = channel.GuideId == TvGuide.NoGuide ? "NONE"
+                : guide?.Match(channel.Name, channel.GuideId)?.Name.ToUpperInvariant() ?? (guide == null ? "…" : "NOT FOUND");
             var buttons = Chips(
+                ($"GUIDE: {guideName}{(channel.GuideId.Length == 0 ? " (AUTO)" : "")}", false, () => PickGuideChannel(tile, channel)),
                 ("▲", false, () => MoveChannel(tile, index, -1)),
                 ("▼", false, () => MoveChannel(tile, index, 1)),
                 ("REMOVE", false, () => { tile.Channels.RemoveAt(index); RebuildForm(); }));
@@ -236,6 +259,55 @@ sealed class EditorScreen : Screen
         })));
         fields.Children.Add(Field("CHANNELS", list,
             "Easiest from the tile itself: start a live channel playing, press B, choose + ADD THIS CHANNEL. Rename and reorder them here."));
+    }
+
+    /// <summary>The guide for the tile being edited, once it's loaded (for the channels' GUIDE buttons).</summary>
+    TvGuide? guide;
+    string guideFor = "";
+    string guideNote = "";
+
+    async void LoadGuide(Tile tile)
+    {
+        if (guideFor == tile.GuideUrl) return;
+        guideFor = tile.GuideUrl;
+        guide = null;
+        var loaded = await TvGuide.GetAsync(tile.GuideUrl);
+        if (guideFor != tile.GuideUrl) return;
+        guide = loaded;
+        if (Current == tile) RebuildForm();
+    }
+
+    async void CheckGuide(Tile tile)
+    {
+        guideNote = "CHECKING…";
+        RebuildForm();
+        var loaded = await TvGuide.GetAsync(tile.GuideUrl);
+        guideFor = tile.GuideUrl;
+        guide = loaded;
+        guideNote = loaded == null
+            ? "COULDN'T GET THAT GUIDE — SEE THE LOG. TRY THE OTHER SOURCE."
+            : $"OK: {loaded.Channels.Count} CHANNELS. " +
+              $"{tile.Channels.Count(c => loaded.Match(c.Name, c.GuideId) != null)} OF YOUR {tile.Channels.Count} MATCHED.";
+        if (Current == tile) RebuildForm();
+    }
+
+    async void PickGuideChannel(Tile tile, LiveChannel channel)
+    {
+        var loaded = guide ?? await TvGuide.GetAsync(tile.GuideUrl);
+        if (loaded == null)
+        {
+            guideNote = "NO GUIDE TO PICK FROM — CHECK THE TV GUIDE SETTING.";
+            RebuildForm();
+            return;
+        }
+        var options = loaded.Channels.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        var labels = new List<string> { "AUTOMATIC (BY NAME)", "NO GUIDE FOR THIS CHANNEL" };
+        labels.AddRange(options.Select(c => c.Name.ToUpperInvariant()));
+        Host.ShowModal(new PickerModal(Host, $"GUIDE FOR {channel.Name.ToUpperInvariant()}", labels, pick =>
+        {
+            channel.GuideId = pick switch { 0 => "", 1 => TvGuide.NoGuide, _ => options[pick - 2].Id };
+            RebuildForm();
+        }));
     }
 
     void MoveChannel(Tile tile, int index, int step)
