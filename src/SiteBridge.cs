@@ -111,6 +111,17 @@ sealed class SiteBridge : IDisposable
         }
     }
 
+    /// <summary>Runs some script in one page — an answer to something it asked.</summary>
+    public async Task EvaluateAsync(string session, string expression)
+    {
+        if (socket?.State != WebSocketState.Open) return;
+        try
+        {
+            await SendAsync("Runtime.evaluate", new { expression }, session);
+        }
+        catch (Exception e) when (e is OperationCanceledException or WebSocketException or ObjectDisposedException) { }
+    }
+
     /// <summary>Opens an address in one page (the one that asked).</summary>
     public async Task NavigateAsync(string session, string url)
     {

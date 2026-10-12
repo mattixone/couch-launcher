@@ -75,26 +75,48 @@ changes what's on screen and what the buttons do.
 3. Find a live channel and start it playing. Press **B** and choose
    **+ ADD THIS CHANNEL**. Do that for each channel you want. B ›
    BROWSE A SERVICE… gets you to the other sites.
-4. Back in Edit tiles you can rename, reorder and remove channels, or add one
-   by pasting its address.
+4. Pick your city under TV GUIDE (see below). Back in Edit tiles you can
+   also rename, reorder and remove channels, or add one by pasting its
+   address.
 
 **Using it**
 
-- **B:** the menu, from anywhere. It has your channels, ADD THIS CHANNEL or
-  REMOVE, BROWSE A SERVICE…, PREVIOUS PAGE, and THE SITE'S OWN SCREEN, which
-  shows the normal site until you leave that page.
-- **On a channel:** ▲▼ change channel (a few quick presses skip channels),
-  ◄ goes back to the last channel, A shows the channel bar.
-- **On a show or film:** A plays/pauses, ◄► jump 10 seconds.
+- **B:** the menu, from anywhere. It has your channels (with what's on
+  each), TV GUIDE, ADD THIS CHANNEL, or RENAME and REMOVE for the one
+  you're on, LAST CHANNEL, BROWSE A SERVICE…, PREVIOUS PAGE, and THE SITE'S
+  OWN SCREEN, which shows the normal site until you leave that page.
+- **On a channel:** ◄► change channel (a few quick presses skip channels),
+  ▲▼ change the PC's volume, A shows what's on. Press A again while it's up
+  for the TV guide.
+- **On a show or film:** A plays/pauses, ◄► jump 10 seconds, ▲▼ volume.
 - **Anywhere else** the keys belong to the site, so you can browse it with
   the D-pad and A.
 - When something plays, the video fills the screen and the rest of the page
   is hidden. If a channel doesn't start by itself, Live Surfer presses its
   Play button. If it still isn't playing after 15 seconds, it shows you the
   page so you can start it.
+- **What's on:** when a channel comes on, the channel bar shows for 3
+  seconds with the show, how far through it is, and what's next.
+- **TV guide:** channels down the side, the next two hours across. ▲▼ pick a
+  channel, ◄► move through its shows, A watches whatever's on now (for a
+  later show it says when it starts), B closes.
+- **Renaming:** B › RENAME brings up an on-screen keyboard. Use the D-pad
+  and A, or type on the phone remote's keyboard, then DONE.
 - The tile opens on the last channel you watched. Changing channel within a
   site is quick. Changing to another site loads that site, so allow a few
   seconds.
+
+**TV guide**
+
+Show times come from a free TV guide file the launcher downloads every few
+hours, the same kind PVRs use. Edit tiles › TV GUIDE offers two community
+sources, [i.mjh.nz](https://i.mjh.nz/au/) and
+[xmltv.net](https://www.xmltv.net/), for each capital city. Pick your
+city, then CHECK IT to see how many of your channels it matched. If one
+source stops updating, switch to the other. Each channel is matched to the
+guide by name ("7MATE" finds "7mate Sydney"). If a match is wrong or
+missing, use the channel's GUIDE button to pick it from the list. The last
+download is kept, so the guide still works for a while if a download fails.
 
 **Good to know**
 
@@ -108,8 +130,8 @@ changes what's on screen and what the buttons do.
   profile, and the connection is only reachable from the PC itself, never
   the network.
 - **When something stops working:** `launcher.log` has a line for each step
-  (channel changes, Play pressed, TV look on/off, which copy protection the
-  site asked for). The script is `sites/live-surfer.js` in this repo. To try
+  (channel changes, Play pressed, TV look on/off, guide downloads, which copy
+  protection the site asked for). The script is `sites/live-surfer.js` in this repo. To try
   a fix without releasing, put an edited copy in
   `CouchLauncherData\sites\live-surfer.js` and it's used from the next page
   load.
