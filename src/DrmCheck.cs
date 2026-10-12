@@ -8,7 +8,7 @@ namespace CouchLauncher;
 /// Windows lets apps build in — can play. Streaming sites only play in a
 /// browser that has the DRM they use; Brave, Chrome and Edge have Google's
 /// Widevine, WebView2 is known to lack it. If WebView2 has what the sites ask
-/// for (couch mode logs what they ask for), a browser built into the launcher
+/// for (Live Surfer logs what they ask for), a browser built into the launcher
 /// would be an option.
 /// </summary>
 static class DrmCheck

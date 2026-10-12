@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace CouchLauncher;
 
-enum TileKind { Web, App, Steam, Power, Settings }
+enum TileKind { Web, App, Steam, Power, Settings, LiveSurfer }
 
 /// <summary>
 /// One tile on the home screen. A single flat record for every kind — only
@@ -23,9 +23,12 @@ sealed class Tile
     /// <summary>Tells the site we're a smart TV. youtube.com/tv only shows its
     /// TV interface to TVs and redirects everything else.</summary>
     public bool TvMode { get; set; }
-    /// <summary>For sites couch mode knows (see SiteScripts): the TV look,
-    /// channel bar and D-pad controls. Off = the site exactly as it comes.</summary>
-    public bool CouchMode { get; set; } = true;
+
+    // --- Live Surfer (also uses Url, as the page it opens with no channels yet, and Browser) ---
+    /// <summary>Live channels from any streaming site, in channel order.</summary>
+    public List<LiveChannel> Channels { get; set; } = new();
+    /// <summary>The channel it was on last, which it opens on next time.</summary>
+    public int LastChannel { get; set; }
 
     // --- App ---
     /// <summary>Program to run: an .exe, or a steam:// style link.</summary>
@@ -45,11 +48,13 @@ sealed class Tile
 
     /// <summary>What the Retroid's A button (a Play/Pause media key) does while
     /// this tile's app is in front: null = automatic (Enter for TV-mode and
-    /// couch-mode tiles),
+    /// Live Surfer tiles),
     /// true = press Enter instead, false = leave it as Play/Pause. Menus in
     /// apps like YouTube TV only respond to Enter.</summary>
     public bool? ASelects { get; set; }
-    [JsonIgnore] public bool AButtonSelects => ASelects ?? (TvMode || SiteScripts.Enhances(this));
+    [JsonIgnore] public bool AButtonSelects => ASelects ?? (TvMode || Kind == TileKind.LiveSurfer);
+    /// <summary>Opens in its own browser window, which the launcher tracks by profile.</summary>
+    [JsonIgnore] public bool InBrowser => Kind is TileKind.Web or TileKind.LiveSurfer;
 
     /// <summary>Close any extra windows the app opens. Turn off while signing
     /// in for the first time — some logins happen in a pop-up.</summary>
@@ -58,6 +63,13 @@ sealed class Tile
     public string IconPath { get; set; } = "";
 
     [JsonIgnore] public bool IsBuiltIn => Kind is TileKind.Power or TileKind.Settings;
+}
+
+/// <summary>One of a Live Surfer tile's channels: the page where it plays.</summary>
+sealed class LiveChannel
+{
+    public string Name { get; set; } = "";
+    public string Url { get; set; } = "";
 }
 
 /// <summary>The two tiles every home screen ends with. Not saved or editable.</summary>
