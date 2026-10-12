@@ -11,6 +11,7 @@ static class Native
 {
     public const int WM_CLOSE = 0x0010;
     public const int WM_HOTKEY = 0x0312;
+    public const int WM_DISPLAYCHANGE = 0x007E;
     public const byte VK_F11 = 0x7A;
 
     const int SW_RESTORE = 9;
@@ -211,6 +212,10 @@ static class Native
         GetMonitorInfoW(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), ref info);
         return info.rcMonitor;
     }
+
+    public static bool IsMinimised(IntPtr h) => IsIconic(h);
+
+    public static RECT WindowRect(IntPtr h) => GetWindowRect(h, out var r) ? r : default;
 
     /// <summary>Already filling the whole screen (true fullscreen or borderless).</summary>
     public static bool CoversMonitor(IntPtr h)
