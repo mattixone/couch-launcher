@@ -212,6 +212,10 @@ static class Native
         return info.rcMonitor;
     }
 
+    public static bool IsMinimised(IntPtr h) => IsIconic(h);
+
+    public static RECT WindowRect(IntPtr h) => GetWindowRect(h, out var r) ? r : default;
+
     /// <summary>Already filling the whole screen (true fullscreen or borderless).</summary>
     public static bool CoversMonitor(IntPtr h)
     {

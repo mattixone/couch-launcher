@@ -41,6 +41,8 @@ sealed class AppManager
     readonly Dictionary<string, TileRuntime> byId = new();
     readonly Dictionary<IntPtr, DateTime> firstSeen = new();
     readonly Dictionary<IntPtr, DateTime> closeSent = new();
+    /// <summary>Windows a fullscreen fix is already under way for.</summary>
+    readonly HashSet<IntPtr> restoringFullscreen = new();
     /// <summary>Couch mode's connection to each web tile's browser, by tile id.</summary>
     readonly Dictionary<string, SiteBridge> bridges = new();
     DateTime lastDiscovery = DateTime.MinValue;
@@ -353,17 +355,62 @@ sealed class AppManager
 
         switch (r.Tile.Kind)
         {
-            // Browsers are started fullscreen; if someone pressed F11 since,
-            // press it again. Only for a window that's settled — mid-way
-            // through its own fullscreen switch, F11 would undo it.
-            case TileKind.Web when userAction && ok && Age(h) > 3 && !Native.CoversMonitor(h):
-                Native.TapKey(Native.VK_F11);
-                Log.Write($"{r.Tile.Name} had left fullscreen — F11");
+            case TileKind.Web when userAction:
+                _ = RestoreFullscreenAsync(r, h);
                 break;
             case TileKind.App when r.Tile.ForceFullscreen && !Native.CoversMonitor(h):
                 Native.MakeBorderlessFullscreen(h);
                 Log.Write($"{r.Tile.Name}: made borderless fullscreen");
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Browsers are started fullscreen, but drop out of it — minimised and
+    /// restored, Esc out of a video, F11 pressed — and coming back to the tile
+    /// then lands on a small window with a title bar. Press F11 for it, but
+    /// only once it's really in front (the key goes to whatever has focus,
+    /// which takes a moment to arrive) and has stopped moving (mid-way through
+    /// restoring or its own fullscreen switch, F11 would undo it). Checked a
+    /// few times over a few seconds rather than once straight away, but
+    /// pressed only once: a second F11 would toggle a fix that worked back off.
+    /// </summary>
+    async Task RestoreFullscreenAsync(TileRuntime r, IntPtr h)
+    {
+        if (!restoringFullscreen.Add(h)) return;
+        try
+        {
+            Native.RECT? last = null;
+            for (int check = 0; check < 16; check++)
+            {
+                await Task.Delay(250);
+                if (r.Main != h) return;
+                if (Native.CoversMonitor(h)) return;
+                // A brand-new window is still setting itself up fullscreen.
+                if (Age(h) < 3 || Native.IsMinimised(h)) continue;
+                if (Native.RootOwner(Native.GetForegroundWindow()) != h)
+                {
+                    last = null;
+                    continue;
+                }
+                var rect = Native.WindowRect(h);
+                bool settled = last is { } before && before.Equals(rect);
+                last = rect;
+                if (!settled) continue;
+
+                Native.TapKey(Native.VK_F11);
+                // Give the switch time to finish before judging it.
+                await Task.Delay(1000);
+                Log.Write(Native.CoversMonitor(h)
+                    ? $"{r.Tile.Name} had left fullscreen — F11 put it back"
+                    : $"{r.Tile.Name} had left fullscreen — F11 didn't put it back");
+                return;
+            }
+            Log.Write($"{r.Tile.Name} isn't fullscreen, but never settled in front to fix it");
+        }
+        finally
+        {
+            restoringFullscreen.Remove(h);
         }
     }
 
