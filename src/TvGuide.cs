@@ -178,6 +178,7 @@ sealed class TvGuide
     {
         if (chosenId == NoGuide) return null;
         if (chosenId.Length > 0) return Channels.FirstOrDefault(c => c.Id == chosenId);
+        if (IsVague(name)) return null;
         var wanted = Normal(name);
         if (wanted.Length == 0) return null;
         var withShows = Channels.Where(c => programmes.ContainsKey(c.Id)).ToList();
@@ -185,6 +186,114 @@ sealed class TvGuide
             ?? withShows.Where(c => Normal(c.Name).StartsWith(wanted) || wanted.StartsWith(Normal(c.Name)))
                         .OrderBy(c => Math.Abs(Normal(c.Name).Length - wanted.Length))
                         .FirstOrDefault();
+    }
+
+    /// <summary>What a channel's page shows, for <see cref="Identify"/>.</summary>
+    public sealed record Clues(string Url, string Title, string[] Labels, string Text);
+
+    public sealed record Candidate(Channel Channel, int Score, string Now);
+
+    /// <summary>
+    /// Which guide channel a page is showing, from what's on it. The strong
+    /// clue: only one channel has a given show on right now, and the page
+    /// nearly always shows the current show's title somewhere. Then the
+    /// channel's own name in the address, title or labels breaks ties
+    /// (simulcasts, a show on two channels). Best first.
+    /// </summary>
+    public List<Candidate> Identify(Clues clues)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var text = " " + Words(clues.Text) + " ";
+        var title = Words(clues.Title);
+        var labels = clues.Labels.Select(Words).ToList();
+        var address = Uri.TryCreate(clues.Url, UriKind.Absolute, out var uri)
+            ? Words(Uri.UnescapeDataString(uri.Host + " " + uri.AbsolutePath + " " + uri.Query))
+            : Words(clues.Url);
+        var everywhere = " " + string.Join(" ", new[] { title, address }.Concat(labels)) + " ";
+
+        var scored = new List<Candidate>();
+        foreach (var channel in Channels)
+        {
+            if (!programmes.TryGetValue(channel.Id, out var shows)) continue;
+            int score = 0;
+
+            // The show on now (guides drift a few minutes either side), and the ones either side of it.
+            var onNow = shows.FirstOrDefault(p => p.Start <= now.AddMinutes(5) && now.AddMinutes(-5) < p.Stop);
+            int at = onNow == null ? -1 : shows.IndexOf(onNow);
+            score += TitleScore(onNow, text, everywhere, 10);
+            if (at > 0) score += TitleScore(shows[at - 1], text, everywhere, 3);
+            if (at >= 0 && at + 1 < shows.Count) score += TitleScore(shows[at + 1], text, everywhere, 4);
+
+            // The channel's name: "7mate Sydney" → "7mate", in the address or on the page.
+            var key = Words(StripPlace(channel.Name));
+            if (key.Length > 0)
+            {
+                var compactKey = key.Replace(" ", "");
+                bool shortKey = compactKey.Length < 3;    // "7", "9", "10": whole words only
+                if (Contains(address, key, compactKey, shortKey)) score += 6;
+                if (Contains(title, key, compactKey, shortKey)) score += 5;
+                if (labels.Any(l => Contains(l, key, compactKey, shortKey))) score += 3;
+            }
+            if (score > 0) scored.Add(new Candidate(channel, score, onNow?.Title ?? ""));
+        }
+
+        // Of two equally good names, the shorter is the plainer channel ("SBS", not "SBS Food").
+        return scored.OrderByDescending(c => c.Score).ThenBy(c => c.Channel.Name.Length).ToList();
+    }
+
+    /// <summary>Sure enough to use without asking: clearly ahead of the rest.</summary>
+    public static bool Confident(List<Candidate> ranked) =>
+        ranked.Count > 0 && ranked[0].Score >= 8 && (ranked.Count == 1 || ranked[0].Score >= ranked[1].Score + 3);
+
+    static int TitleScore(Programme? show, string text, string everywhere, int points)
+    {
+        if (show == null) return 0;
+        var title = Words(show.Title);
+        // Short or generic titles ("News", "Movie") say little.
+        if (title.Length < 4 || title is "news" or "movie" or "the movie" or "programmes resume" or "to be advised") return 0;
+        var padded = " " + title + " ";
+        return everywhere.Contains(padded) ? points + 2 : text.Contains(padded) ? points : 0;
+    }
+
+    static bool Contains(string haystack, string key, string compactKey, bool wholeWord) =>
+        wholeWord
+            ? (" " + haystack + " ").Contains(" " + key + " ")
+            : (" " + haystack + " ").Contains(" " + key + " ") || haystack.Replace(" ", "").Contains(compactKey);
+
+    static readonly string[] Places =
+    {
+        "sydney", "melbourne", "brisbane", "adelaide", "perth", "hobart", "canberra", "darwin",
+        "nsw", "vic", "qld", "sa", "wa", "tas", "act", "nt", "hd", "regional", "gold coast", "newcastle",
+    };
+
+    /// <summary>A guide channel's name without its city: "7mate Sydney" → "7mate".</summary>
+    public static string StripPlace(string name)
+    {
+        var words = name.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        while (words.Count > 1 && Places.Contains(words[^1].ToLowerInvariant().Trim('(', ')'))) words.RemoveAt(words.Count - 1);
+        return string.Join(' ', words);
+    }
+
+    /// <summary>Lower case, letters and digits only, single spaces.</summary>
+    static string Words(string text)
+    {
+        var chars = text.ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : ' ').ToArray();
+        return string.Join(' ', new string(chars).Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>
+    /// A channel name that says nothing about which channel it is — a web
+    /// address, a service's own name ("SBS ON DEMAND"), "CHANNEL 3" — so it
+    /// mustn't be matched by name (and the guide's name can replace it).
+    /// </summary>
+    public static bool IsVague(string name)
+    {
+        var plain = name.Trim().ToUpperInvariant();
+        if (plain.Length < 3 || plain.StartsWith("WWW") || plain.StartsWith("CHANNEL ")) return true;
+        if (plain.Contains('.') && !plain.Contains(' ')) return true;
+        var squashed = new string(plain.Where(char.IsLetterOrDigit).ToArray());
+        return squashed is "ABCIVIEW" or "IVIEW" or "SBSONDEMAND" or "ONDEMAND" or "7PLUS" or "9NOW" or "10PLAY" or "TENPLAY"
+            or "ABC" or "SBS" or "TV" or "LIVETV" or "LIVE" or "SEVEN" or "NINE" or "TEN" or "WATCHLIVE";
     }
 
     static string Normal(string name)

@@ -113,10 +113,29 @@ hours, the same kind PVRs use. Edit tiles › TV GUIDE offers two community
 sources, [i.mjh.nz](https://i.mjh.nz/au/) and
 [xmltv.net](https://www.xmltv.net/), for each capital city. Pick your
 city, then CHECK IT to see how many of your channels it matched. If one
-source stops updating, switch to the other. Each channel is matched to the
-guide by name ("7MATE" finds "7mate Sydney"). If a match is wrong or
-missing, use the channel's GUIDE button to pick it from the list. The last
-download is kept, so the guide still works for a while if a download fails.
+source stops updating, switch to the other. The last download is kept, so
+the guide still works for a while if a download fails.
+
+Finding each channel in the guide:
+
+- **By name:** a channel called "7MATE" finds "7mate Sydney". Names that
+  don't say which channel it is ("WWW.SBS.COM.AU", "ABC IVIEW",
+  "SBS ON DEMAND") aren't matched by name.
+- **By what's on the page, automatically:** a channel the guide can't place
+  sends the launcher what its page says (title, labels, text). Live pages
+  nearly always show the current show's name, and only one guide channel has
+  that show on right now. The channel's name in the address helps too
+  (simulcasts, pages that list several channels). When one guide channel
+  clearly fits, it's used, and a channel named after a web address or a
+  service gets the guide's name. This happens about 6 seconds after a
+  channel starts playing.
+- **B › ⌕ SCAN ALL CHANNELS FOR THE GUIDE** does that for every channel
+  the guide doesn't know yet (or all of them, if it knows them all). It
+  visits each one for a few seconds, then comes back. B stops it.
+- **B › ⌕ FIND IN TV GUIDE** on a channel lists the guide channels its page
+  fits best, with what's on each now, for you to pick. It also has
+  AUTOMATIC and NO GUIDE.
+- **Edit tiles:** each channel's GUIDE button picks from the full list.
 
 **Good to know**
 
