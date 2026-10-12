@@ -121,6 +121,12 @@ sealed class HomeScreen : Screen
             : "NO BROWSER FOUND",
         TileKind.App => string.IsNullOrWhiteSpace(tile.Target) ? "NOT SET UP YET" : "APP",
         TileKind.Steam => "BIG PICTURE",
+        TileKind.LiveSurfer => tile.Channels.Count switch
+        {
+            0 => "LIVE SURFER · NO CHANNELS YET",
+            1 => "LIVE SURFER · 1 CHANNEL",
+            var n => $"LIVE SURFER · {n} CHANNELS",
+        },
         TileKind.Power => "SLEEP · RESTART · OFF",
         _ => "THEME · TILES · UPDATES",
     };
@@ -138,9 +144,10 @@ sealed class TileView
         var content = new Grid();
 
         FrameworkElement art;
-        if (tile.IsBuiltIn)
+        if (tile.IsBuiltIn || (tile.Kind == TileKind.LiveSurfer && icon == null))
         {
-            var glyph = Crt.Text(tile.Kind == TileKind.Power ? "" : "", 96);
+            // Power, settings, and a TV for Live Surfer.
+            var glyph = Crt.Text(tile.Kind switch { TileKind.Power => "", TileKind.Settings => "", _ => "" }, 96);
             glyph.FontFamily = Crt.Symbols;
             art = glyph;
         }

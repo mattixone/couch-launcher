@@ -33,7 +33,7 @@
     <!-- The phone remote page, from github.com/mattixone/CouchControllerWeb.
          release.sh refreshes it before each build. -->
     <EmbeddedResource Include="web\index.html" LogicalName="CouchLauncher.web.index.html" />
-    <!-- Couch mode's scripts for streaming sites (see SiteScripts.cs). -->
+    <!-- Live Surfer's script for streaming sites' pages (see LiveSurfer.cs). -->
     <EmbeddedResource Include="sites\*.js" LogicalName="CouchLauncher.sites.%(Filename)%(Extension)" />
   </ItemGroup>
 

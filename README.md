@@ -57,49 +57,62 @@ Retroid's link to the Pico isn't involved either way.
   CouchControllerWeb each release. To try changes without releasing, put an
   `index.html` in `CouchLauncherData\web\`. It's used instead, straight away.
 
-## Couch mode (live TV on ABC iview)
+## Live Surfer (live TV from the streaming sites)
 
-Web tiles for sites couch mode knows (so far **ABC iview**) behave like a TV
-app instead of a website. iview's own player still does the playing, so your
-sign-in and the site's copy protection work as normal. Couch mode only changes
-what's on screen and what the buttons do:
+A **Live Surfer** tile puts live channels from ABC iview, SBS On Demand,
+7plus, 9Now and 10 into one window you can flick through with the D-pad. The
+channels are pages you pick yourself. Each site's own player does the
+playing, so sign-ins and copy protection work as normal. Live Surfer only
+changes what's on screen and what the buttons do.
 
-- As soon as something plays, the video fills the screen and the rest of the
-  page is hidden. A channel bar in your launcher theme shows the channel and
-  the time.
-- **On live TV:** ▲▼ change channel, ◄ goes back to the last channel, A shows
-  the channel bar, B opens the channel list.
-- **In the channel list:** ▲▼ move, A watches, B closes. At the bottom,
-  *FIND MORE CHANNELS…* opens iview's live page so couch mode can find the
-  rest, and *ABC IVIEW'S OWN SCREEN* shows the normal site until you leave
-  that page.
-- **On a show or film:** A plays/pauses, ◄► jump 10 seconds, ▼ opens the
-  channel list, B leaves the player the site's own way.
+**Setting one up**
 
-ABC TV and ABC ENTERTAINS are in the list from the start. Open FIND MORE
-CHANNELS once and ABC NEWS, ABC KIDS and ABC FAMILY are added under the
-names iview gives them. The state versions of ABC TV are left out.
+1. Settings › Edit tiles › + ADD, then TYPE › LIVE SURFER. Pick a browser and
+   a start page (it opens there until it has channels).
+2. Open the tile. Sign in to each service you use, once. The tile keeps its
+   own sign-ins. Some sites sign in through a pop-up, so turn POP-UP WINDOWS
+   to ALLOWED while you do this, then back to BLOCKED.
+3. Find a live channel and start it playing. Press **B** and choose
+   **+ ADD THIS CHANNEL**. Do that for each channel you want. B ›
+   BROWSE A SERVICE… gets you to the other sites.
+4. Back in Edit tiles you can rename, reorder and remove channels, or add one
+   by pasting its address.
 
-To open straight onto live TV, set the tile's address to
-`https://iview.abc.net.au/show/abc-live-stream`. Opening any channel's page
-starts that channel. The first time a channel plays, couch mode remembers
-where its player is, and after that it goes straight there.
+**Using it**
 
-- **Setting up:** nothing to do for a tile whose address is on
-  `iview.abc.net.au`. It's on by default, with A set to Select. Settings ›
-  Edit tiles › COUCH MODE turns it off. Close the tile and open it again
-  after changing it. A tile that was already open before you updated the
-  launcher needs closing and opening once.
+- **B:** the menu, from anywhere. It has your channels, ADD THIS CHANNEL or
+  REMOVE, BROWSE A SERVICE…, PREVIOUS PAGE, and THE SITE'S OWN SCREEN, which
+  shows the normal site until you leave that page.
+- **On a channel:** ▲▼ change channel (a few quick presses skip channels),
+  ◄ goes back to the last channel, A shows the channel bar.
+- **On a show or film:** A plays/pauses, ◄► jump 10 seconds.
+- **Anywhere else** the keys belong to the site, so you can browse it with
+  the D-pad and A.
+- When something plays, the video fills the screen and the rest of the page
+  is hidden. If a channel doesn't start by itself, Live Surfer presses its
+  Play button. If it still isn't playing after 15 seconds, it shows you the
+  page so you can start it.
+- The tile opens on the last channel you watched. Changing channel within a
+  site is quick. Changing to another site loads that site, so allow a few
+  seconds.
+
+**Good to know**
+
+- Save the page a channel actually plays on. If a site plays every channel
+  from the same address (switching inside the page without the address
+  changing), Live Surfer can't tell those channels apart. Tell me which site
+  and it can get a small fix of its own.
 - **How it works:** the launcher starts the tile's browser with its DevTools
-  connection switched on (the one automation tools use), and puts couch
-  mode's script into each page the tile opens. This only works because each
-  tile has its own browser profile, and the connection is only reachable from
-  the PC itself, never the network.
-- **When iview changes and something stops working:** `launcher.log` has a
-  line for each step (channel found, play button pressed, TV look on/off,
-  which copy protection the site asked for). The scripts are `sites/*.js` in
-  this repo. To try a fix without releasing, put an edited copy in
-  `CouchLauncherData\sites\` and it's used from the next page load.
+  connection on (the one automation tools use) and puts Live Surfer's script
+  into every page. This only works because each tile has its own browser
+  profile, and the connection is only reachable from the PC itself, never
+  the network.
+- **When something stops working:** `launcher.log` has a line for each step
+  (channel changes, Play pressed, TV look on/off, which copy protection the
+  site asked for). The script is `sites/live-surfer.js` in this repo. To try
+  a fix without releasing, put an edited copy in
+  `CouchLauncherData\sites\live-surfer.js` and it's used from the next page
+  load.
 - **Settings › DRM CHECK** shows whether WebView2 (the browser engine apps
   can build in) could play these sites. Compare it with the copy protection
   the log says each site asks for.
@@ -109,7 +122,7 @@ where its player is, and after that it goes straight there.
 - App: `%LocalAppData%\CouchLauncher` (managed by the installer; replaced on update)
 - Settings, log, icons, browser sign-ins: `%LocalAppData%\CouchLauncherData`
   - `config.json`: tiles, theme, shortcuts, phone remote
-  - `sites\`: optional local copies of couch mode's scripts, used instead of the built-in ones
+  - `sites\live-surfer.js`: optional local copy of Live Surfer's script, used instead of the built-in one
   - `launcher.log`: first place to look when something misbehaves
 
 ## Releasing

@@ -127,7 +127,8 @@ sealed class EditorScreen : Screen
         fields.Children.Add(Field("TYPE", Chips(
             ("WEB PAGE", tile.Kind == TileKind.Web, () => SetKind(tile, TileKind.Web)),
             ("APP", tile.Kind == TileKind.App, () => SetKind(tile, TileKind.App)),
-            ("STEAM BIG PICTURE", tile.Kind == TileKind.Steam, () => SetKind(tile, TileKind.Steam)))));
+            ("STEAM BIG PICTURE", tile.Kind == TileKind.Steam, () => SetKind(tile, TileKind.Steam)),
+            ("LIVE SURFER", tile.Kind == TileKind.LiveSurfer, () => SetKind(tile, TileKind.LiveSurfer)))));
 
         switch (tile.Kind)
         {
@@ -139,11 +140,6 @@ sealed class EditorScreen : Screen
                 fields.Children.Add(Field("TV MODE", Chips(
                     (tile.TvMode ? "ON" : "OFF", tile.TvMode, () => { tile.TvMode = !tile.TvMode; RebuildForm(); })),
                     "Pretends to be a smart TV. Needed for youtube.com/tv, which otherwise redirects."));
-                var sites = string.Join(", ", SiteScripts.All.Select(s => s.Label));
-                fields.Children.Add(Field("COUCH MODE", Chips(
-                    (tile.CouchMode ? "ON" : "OFF", tile.CouchMode, () => { tile.CouchMode = !tile.CouchMode; RebuildForm(); })),
-                    $"Live TV the couch way: full-screen video, a channel bar, and ▲▼ to change channel. Works on {sites}" +
-                    (SiteScripts.For(tile.Url) == null ? " (not this address)." : ". Close and reopen the tile after changing it.")));
                 break;
 
             case TileKind.App:
@@ -168,12 +164,16 @@ sealed class EditorScreen : Screen
             case TileKind.Steam:
                 fields.Children.Add(Field("", Crt.Text("Opens Steam straight into Big Picture mode. Nothing to set up.", 22, 0.7)));
                 break;
+
+            case TileKind.LiveSurfer:
+                AddSurferFields(fields, tile);
+                break;
         }
 
         fields.Children.Add(Field("A BUTTON", Chips(
             ("PLAY / PAUSE", !tile.AButtonSelects, () => { tile.ASelects = false; RebuildForm(); }),
             ("SELECT (ENTER)", tile.AButtonSelects, () => { tile.ASelects = true; RebuildForm(); })),
-            "What the Retroid's A button does inside this app. Choose SELECT for apps you steer with the D-pad, like YouTube TV (TV-mode and couch-mode tiles do this already)."));
+            "What the Retroid's A button does inside this app. Choose SELECT for apps you steer with the D-pad, like YouTube TV (TV-mode and Live Surfer tiles do this already)."));
 
         fields.Children.Add(Field("POP-UP WINDOWS", Chips(
             (tile.BlockPopups ? "BLOCKED" : "ALLOWED", tile.BlockPopups, () => { tile.BlockPopups = !tile.BlockPopups; RebuildForm(); })),
@@ -185,13 +185,81 @@ sealed class EditorScreen : Screen
             tile.IconPath.Length > 0 ? tile.IconPath : null));
     }
 
+    /// <summary>Live Surfer: the browser, where it starts, and its channels.</summary>
+    void AddSurferFields(StackPanel fields, Tile tile)
+    {
+        fields.Children.Add(Field("", Crt.Text(
+            "Live channels from iview, SBS, 7plus, 9Now and 10 in one window. ▲▼ change channel, B opens the menu.", 22, 0.7)));
+        fields.Children.Add(Field("BROWSER", Chips(Browsers.All.Select(b =>
+            (b.Label + (Browsers.Installed(b) ? "" : " (NOT INSTALLED)"), tile.Browser == b.Id,
+             (Action)(() => { tile.Browser = b.Id; RebuildForm(); }))).ToArray()),
+            "Sign in to each service once inside this tile; it keeps its own sign-ins."));
+
+        var startPage = new StackPanel();
+        startPage.Children.Add(Crt.Input(tile.Url == "https://" ? "" : tile.Url, value => tile.Url = value.Trim()));
+        startPage.Children.Add(Chips(LiveSurfer.Services.Select(s =>
+            (s.Name, tile.Url == s.Url, (Action)(() => { tile.Url = s.Url; RebuildForm(); }))).ToArray()));
+        fields.Children.Add(Field("START PAGE", startPage, "Where it opens until it has channels. After that it opens on the last channel you watched."));
+
+        var list = new StackPanel();
+        if (tile.Channels.Count == 0)
+            list.Children.Add(Crt.Text("NONE YET", 22, 0.6));
+        for (int i = 0; i < tile.Channels.Count; i++)
+        {
+            var channel = tile.Channels[i];
+            int index = i;
+            var row = new StackPanel { Margin = new Thickness(0, 0, 0, 18) };
+            var top = new DockPanel();
+            var number = Crt.Text($"{i + 1:00}", 24, 0.65, bold: true);
+            number.Width = 52;
+            number.VerticalAlignment = VerticalAlignment.Center;
+            DockPanel.SetDock(number, Dock.Left);
+            top.Children.Add(number);
+            top.Children.Add(Crt.Input(channel.Name, value => channel.Name = value.Trim()));
+            row.Children.Add(top);
+            var address = Crt.Input(channel.Url, value => channel.Url = value.Trim());
+            address.FontSize = 18;
+            address.Margin = new Thickness(52, 6, 0, 0);
+            row.Children.Add(address);
+            var buttons = Chips(
+                ("▲", false, () => MoveChannel(tile, index, -1)),
+                ("▼", false, () => MoveChannel(tile, index, 1)),
+                ("REMOVE", false, () => { tile.Channels.RemoveAt(index); RebuildForm(); }));
+            buttons.Margin = new Thickness(52, 10, 0, -14);
+            row.Children.Add(buttons);
+            list.Children.Add(row);
+        }
+        list.Children.Add(Chips(("+ ADD BY ADDRESS", false, () =>
+        {
+            tile.Channels.Add(new LiveChannel { Name = $"CHANNEL {tile.Channels.Count + 1}", Url = "https://" });
+            RebuildForm();
+        })));
+        fields.Children.Add(Field("CHANNELS", list,
+            "Easiest from the tile itself: start a live channel playing, press B, choose + ADD THIS CHANNEL. Rename and reorder them here."));
+    }
+
+    void MoveChannel(Tile tile, int index, int step)
+    {
+        int to = index + step;
+        if (to < 0 || to >= tile.Channels.Count) return;
+        (tile.Channels[index], tile.Channels[to]) = (tile.Channels[to], tile.Channels[index]);
+        if (tile.LastChannel == index) tile.LastChannel = to;
+        else if (tile.LastChannel == to) tile.LastChannel = index;
+        RebuildForm();
+    }
+
     void SetKind(Tile tile, TileKind kind)
     {
         tile.Kind = kind;
         // Browsers love opening stray windows; desktop apps' extra windows
         // are usually real (settings, dialogs).
-        tile.BlockPopups = kind == TileKind.Web;
+        tile.BlockPopups = tile.InBrowser;
         if (kind == TileKind.Steam && tile.Name == "NEW TILE") tile.Name = "STEAM";
+        if (kind == TileKind.LiveSurfer)
+        {
+            if (tile.Name == "NEW TILE") tile.Name = "LIVE TV";
+            if (!Uri.TryCreate(tile.Url, UriKind.Absolute, out _)) tile.Url = LiveSurfer.Services[0].Url;
+        }
         RebuildList();
         RebuildForm();
     }

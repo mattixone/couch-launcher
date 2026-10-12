@@ -7,17 +7,18 @@ using System.Text.Json.Nodes;
 namespace CouchLauncher;
 
 /// <summary>
-/// Puts couch mode's script into every page of one web tile, through the
-/// browser's DevTools connection — the one automation tools use — rather than
-/// an extension. Chrome no longer lets a program load an extension when it
-/// starts the browser, and an extension would need installing once per tile
-/// profile; this needs nothing installed and ships with the launcher.
+/// Puts Live Surfer's script into every page of one tile's browser, through
+/// the browser's DevTools connection (the one automation tools use) rather
+/// than an extension. Chrome no longer lets a program load an extension when
+/// it starts the browser, and an extension would need installing in each
+/// tile's profile; this needs nothing installed and ships with the launcher.
 ///
 /// The tile's browser is started listening on a port it picks itself, on
 /// 127.0.0.1 only, and writes the port into its profile folder. Chrome only
 /// allows this for a profile that isn't the default one, which every tile's
 /// is. The script is registered to run before the site's own code on every
-/// page, including new pages and pop-ups.
+/// page, including new pages and pop-ups, and swapped for a new one whenever
+/// the launcher has new settings for it.
 /// </summary>
 sealed class SiteBridge : IDisposable
 {
@@ -27,15 +28,17 @@ sealed class SiteBridge : IDisposable
 
     readonly string tileName;
     readonly string profileDir;
-    readonly string script;
     readonly CancellationTokenSource stop = new();
     readonly SemaphoreSlim sending = new(1, 1);
-    readonly Dictionary<int, string> pending = new();
+    readonly Dictionary<int, (string Method, TaskCompletionSource<JsonNode?> Reply)> pending = new();
+    /// <summary>Each page's session, and the id its copy of the script is registered under.</summary>
+    readonly Dictionary<string, string?> pages = new();
+    string script;
     ClientWebSocket? socket;
     int nextId;
 
-    /// <summary>A message from a page (JSON text). Called on a background thread.</summary>
-    public Action<string>? Message { get; set; }
+    /// <summary>A message from a page: its session and the JSON it sent. Called on a background thread.</summary>
+    public Action<string, string>? Message { get; set; }
     public bool Finished { get; private set; }
 
     SiteBridge(string tileName, string profileDir, string script)
@@ -45,7 +48,7 @@ sealed class SiteBridge : IDisposable
         this.script = script;
     }
 
-    /// <summary>The browser switches couch mode needs. Call before starting the browser.</summary>
+    /// <summary>The browser switches the bridge needs. Call before starting the browser.</summary>
     public static void AddLaunchFlags(ProcessStartInfo start, string profileDir)
     {
         // A leftover from last time would point at a port nobody's on.
@@ -75,6 +78,50 @@ sealed class SiteBridge : IDisposable
         try { socket?.Abort(); } catch { }
     }
 
+    /// <summary>
+    /// Swaps in a new script: pages opened from now on get it, and it's run
+    /// in the pages open now (the script takes over from its older self).
+    /// </summary>
+    public async Task SetScriptAsync(string newScript)
+    {
+        List<KeyValuePair<string, string?>> open;
+        lock (pages)
+        {
+            script = newScript;
+            open = pages.ToList();
+        }
+        if (socket?.State != WebSocketState.Open) return;
+        try
+        {
+            foreach (var (session, old) in open)
+            {
+                if (old != null)
+                    await await SendAsync("Page.removeScriptToEvaluateOnNewDocument", new { identifier = old }, session);
+                var id = await await SendAsync("Page.addScriptToEvaluateOnNewDocument", new { source = newScript }, session);
+                lock (pages)
+                {
+                    if (pages.ContainsKey(session)) pages[session] = (string?)id?["identifier"];
+                }
+                await SendAsync("Runtime.evaluate", new { expression = newScript }, session);
+            }
+        }
+        catch (Exception e) when (e is OperationCanceledException or WebSocketException or ObjectDisposedException)
+        {
+            // The browser closed while we were at it.
+        }
+    }
+
+    /// <summary>Opens an address in one page (the one that asked).</summary>
+    public async Task NavigateAsync(string session, string url)
+    {
+        if (socket?.State != WebSocketState.Open) return;
+        try
+        {
+            await SendAsync("Page.navigate", new { url }, session);
+        }
+        catch (Exception e) when (e is OperationCanceledException or WebSocketException or ObjectDisposedException) { }
+    }
+
     async Task RunAsync(TimeSpan wait)
     {
         try
@@ -82,13 +129,13 @@ sealed class SiteBridge : IDisposable
             var endpoint = await WaitForEndpointAsync(wait);
             if (endpoint == null)
             {
-                Log.Write($"{tileName}: couch mode couldn't find the browser's DevTools port " +
+                Log.Write($"{tileName}: couldn't find the browser's DevTools port " +
                           "(it may have been opened by an older launcher — close it and open it again)");
                 return;
             }
             socket = new ClientWebSocket();
             await socket.ConnectAsync(new Uri(endpoint), stop.Token);
-            Log.Write($"{tileName}: couch mode connected");
+            Log.Write($"{tileName}: connected to the browser");
             // Browser-wide: attach to every page now open and every one opened
             // later, each paused until it's been given the script.
             await SendAsync("Target.setAutoAttach", new { autoAttach = true, waitForDebuggerOnStart = true, flatten = true });
@@ -97,11 +144,16 @@ sealed class SiteBridge : IDisposable
         catch (OperationCanceledException) { }
         catch (Exception e) when (!stop.IsCancellationRequested)
         {
-            Log.Write($"{tileName}: couch mode connection: {e.Message}");
+            Log.Write($"{tileName}: browser connection: {e.Message}");
         }
         finally
         {
             Finished = true;
+            lock (pending)
+            {
+                foreach (var waiting in pending.Values) waiting.Reply.TrySetResult(null);
+                pending.Clear();
+            }
             socket?.Dispose();
         }
     }
@@ -145,24 +197,29 @@ sealed class SiteBridge : IDisposable
             }
             catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException)
             {
-                Log.Write($"{tileName}: couch mode didn't understand the browser: {e.Message}");
+                Log.Write($"{tileName}: didn't understand the browser: {e.Message}");
             }
         }
     }
 
+    /// <summary>
+    /// One message from the browser. Runs in the receive loop, so it never
+    /// waits for a reply — the reply is what the loop would be receiving.
+    /// </summary>
     async Task HandleAsync(JsonNode? message)
     {
         if (message == null) return;
         if (message["id"] is JsonNode idNode)
         {
             int id = idNode.GetValue<int>();
-            string? method;
+            (string Method, TaskCompletionSource<JsonNode?> Reply) waiting;
             lock (pending)
             {
-                pending.Remove(id, out method);
+                if (!pending.Remove(id, out waiting)) return;
             }
             if (message["error"] is JsonNode error)
-                Log.Write($"{tileName}: couch mode: {method} failed: {error["message"]}");
+                Log.Write($"{tileName}: {waiting.Method} failed: {error["message"]}");
+            waiting.Reply.TrySetResult(message["result"]);
             return;
         }
 
@@ -173,37 +230,62 @@ sealed class SiteBridge : IDisposable
             {
                 var session = (string?)parameters?["sessionId"];
                 if (session == null) return;
-                var type = (string?)parameters?["targetInfo"]?["type"];
-                if (type == "page")
+                if ((string?)parameters?["targetInfo"]?["type"] == "page")
                 {
                     bool waiting = (bool?)parameters?["waitingForDebugger"] ?? false;
-                    // Both needed: Page for the script to be run on new
-                    // documents, Runtime for the page's messages to arrive.
+                    string source;
+                    lock (pages)
+                    {
+                        pages[session] = null;
+                        source = script;
+                    }
+                    // Page for the script to run on new documents, Runtime
+                    // for the page's messages to arrive.
                     await SendAsync("Page.enable", new { }, session);
                     await SendAsync("Runtime.enable", new { }, session);
                     await SendAsync("Runtime.addBinding", new { name = BindingName }, session);
-                    await SendAsync("Page.addScriptToEvaluateOnNewDocument", new { source = script }, session);
+                    var added = await SendAsync("Page.addScriptToEvaluateOnNewDocument", new { source }, session);
+                    _ = added.ContinueWith(t =>
+                    {
+                        lock (pages)
+                        {
+                            if (pages.ContainsKey(session) && pages[session] == null)
+                                pages[session] = (string?)t.Result?["identifier"];
+                        }
+                    }, TaskScheduler.Default);
                     // Already-open pages missed the start of their document;
                     // the script copes with arriving late.
-                    if (!waiting) await SendAsync("Runtime.evaluate", new { expression = script }, session);
+                    if (!waiting) await SendAsync("Runtime.evaluate", new { expression = source }, session);
                 }
                 // Anything else (workers and so on) just carries on.
                 await SendAsync("Runtime.runIfWaitingForDebugger", new { }, session);
                 break;
             }
+            case "Target.detachedFromTarget":
+                if ((string?)parameters?["sessionId"] is string gone)
+                {
+                    lock (pages)
+                    {
+                        pages.Remove(gone);
+                    }
+                }
+                break;
             case "Runtime.bindingCalled":
-                if ((string?)parameters?["name"] == BindingName && (string?)parameters?["payload"] is string payload)
-                    Message?.Invoke(payload);
+                if ((string?)parameters?["name"] == BindingName && (string?)parameters?["payload"] is string payload &&
+                    (string?)message["sessionId"] is string from)
+                    Message?.Invoke(from, payload);
                 break;
         }
     }
 
-    async Task SendAsync(string method, object parameters, string? session = null)
+    /// <summary>Sends a command; the task it returns is the reply (null if it failed).</summary>
+    async Task<Task<JsonNode?>> SendAsync(string method, object parameters, string? session = null)
     {
         int id = Interlocked.Increment(ref nextId);
+        var reply = new TaskCompletionSource<JsonNode?>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (pending)
         {
-            pending[id] = method;
+            pending[id] = (method, reply);
         }
         var json = session == null
             ? JsonSerializer.Serialize(new { id, method, @params = parameters })
@@ -217,5 +299,6 @@ sealed class SiteBridge : IDisposable
         {
             sending.Release();
         }
+        return reply.Task;
     }
 }

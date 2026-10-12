@@ -20,6 +20,13 @@ sealed class TileRuntime
     /// <summary>Just launched — focus it (and fullscreen it) once its window shows.</summary>
     public bool PendingFocus { get; set; }
     public DateTime LaunchedAt { get; set; }
+
+    // --- Live Surfer ---
+    /// <summary>The channel it's on (or was last sent to), -1 for none.</summary>
+    public int Channel { get; set; } = -1;
+    public int PreviousChannel { get; set; } = -1;
+    /// <summary>When the channel last changed, Unix milliseconds.</summary>
+    public long TunedAtMs { get; set; }
 }
 
 /// <summary>
@@ -43,16 +50,20 @@ sealed class AppManager
     readonly Dictionary<IntPtr, DateTime> closeSent = new();
     /// <summary>Windows a fullscreen fix is already under way for.</summary>
     readonly HashSet<IntPtr> restoringFullscreen = new();
-    /// <summary>Couch mode's connection to each web tile's browser, by tile id.</summary>
+    /// <summary>Each open Live Surfer tile's connection to its browser, by tile id.</summary>
     readonly Dictionary<string, SiteBridge> bridges = new();
     DateTime lastDiscovery = DateTime.MinValue;
     /// <summary>After closing the Steam tile, keep sending Steam's normal
     /// window to the tray until this time.</summary>
     DateTime steamWindowCloseUntil = DateTime.MinValue;
 
+    /// <summary>The UI thread, where the tile list may be changed.</summary>
+    readonly SynchronizationContext ui;
+
     public AppManager(LauncherConfig config)
     {
         this.config = config;
+        ui = SynchronizationContext.Current ?? new SynchronizationContext();
         Sync();
     }
 
@@ -61,7 +72,15 @@ sealed class AppManager
     {
         var ids = config.Tiles.Select(t => t.Id).ToHashSet();
         foreach (var gone in byId.Keys.Where(id => !ids.Contains(id)).ToList()) byId.Remove(gone);
+        foreach (var gone in bridges.Keys.Where(id => !ids.Contains(id)).ToList())
+        {
+            bridges[gone].Dispose();
+            bridges.Remove(gone);
+        }
         foreach (var tile in config.Tiles) For(tile);
+        // Channels may have been edited: tell any open Live Surfer.
+        foreach (var id in bridges.Keys.ToList())
+            if (For(id) is { } r) _ = PushSurferAsync(r);
     }
 
     public TileRuntime For(Tile tile)
@@ -100,6 +119,7 @@ sealed class AppManager
             switch (tile.Kind)
             {
                 case TileKind.Web:
+                case TileKind.LiveSurfer:
                     if (r.BrowserPid is int dead && !Native.ProcessAlive(dead)) r.BrowserPid = null;
                     if (r.BrowserPid is int pid) r.Windows.AddRange(windows.Where(w => w.Pid == pid));
                     // Launched, but the process we started handed off to an
@@ -160,8 +180,8 @@ sealed class AppManager
         Native.GetWindowThreadProcessId(root, out int pid);
         foreach (var r in byId.Values.Where(r => r.Running))
         {
-            if (r.Tile.Kind == TileKind.Web && r.BrowserPid == pid) return r;
-            if (r.Tile.Kind != TileKind.Web && MatchNames(r.Tile).Contains(WindowScanner.ProcessName(pid), StringComparer.OrdinalIgnoreCase)) return r;
+            if (r.Tile.InBrowser && r.BrowserPid == pid) return r;
+            if (!r.Tile.InBrowser && MatchNames(r.Tile).Contains(WindowScanner.ProcessName(pid), StringComparer.OrdinalIgnoreCase)) return r;
         }
         return null;
     }
@@ -174,7 +194,7 @@ sealed class AppManager
     {
         var r = For(tile);
         Refresh();
-        if (!r.Running && tile.Kind == TileKind.Web)
+        if (!r.Running && tile.InBrowser)
         {
             // Make sure it isn't open in an instance we lost track of — launching
             // again would just add a second window to it.
@@ -233,7 +253,7 @@ sealed class AppManager
             return;
         }
 
-        foreach (var r in byId.Values.Where(r => r.Tile.Kind == TileKind.Web && r.BrowserPid == null))
+        foreach (var r in byId.Values.Where(r => r.Tile.InBrowser && r.BrowserPid == null))
         {
             foreach (var browser in Browsers.All)
             {
@@ -241,8 +261,8 @@ sealed class AppManager
                 r.BrowserPid = hit.Pid;
                 r.BrowserId = hit.BrowserId;
                 Log.Write($"found {r.Tile.Name} already open in {hit.BrowserId} (pid {hit.Pid})");
-                // Opened before the launcher (re)started: pick couch mode back up.
-                StartCouchMode(r.Tile, ProfileDir(r.Tile, hit.BrowserId), TimeSpan.Zero);
+                // Opened before the launcher (re)started: pick Live Surfer back up.
+                if (r.Tile.Kind == TileKind.LiveSurfer) StartSurfer(r, ProfileDir(r.Tile, hit.BrowserId), TimeSpan.Zero);
                 break;
             }
         }
@@ -254,10 +274,13 @@ sealed class AppManager
         switch (tile.Kind)
         {
             case TileKind.Web:
+            case TileKind.LiveSurfer:
             {
                 var browser = Browsers.Resolve(tile.Browser);
                 if (browser == null) return "NO BROWSER FOUND — INSTALL BRAVE, CHROME OR EDGE";
-                if (!Uri.TryCreate(tile.Url.Trim(), UriKind.Absolute, out var url) || url.Host.Length == 0)
+                bool surfer = tile.Kind == TileKind.LiveSurfer;
+                var address = surfer ? LiveSurfer.StartAddress(tile) : tile.Url.Trim();
+                if (!Uri.TryCreate(address, UriKind.Absolute, out var url) || url.Host.Length == 0)
                     return $"{name}: THE WEB ADDRESS LOOKS WRONG";
 
                 var profile = ProfileDir(tile, browser.Id);
@@ -269,14 +292,20 @@ sealed class AppManager
                 start.ArgumentList.Add("--no-default-browser-check");
                 start.ArgumentList.Add("--hide-crash-restore-bubble");
                 if (tile.TvMode) start.ArgumentList.Add($"--user-agent={config.TvUserAgent}");
-                bool couch = SiteScripts.Enhances(tile);
-                if (couch) SiteBridge.AddLaunchFlags(start, profile);
+                if (surfer) SiteBridge.AddLaunchFlags(start, profile);
 
                 using var process = Process.Start(start);
                 r.BrowserPid = process?.Id;
                 r.BrowserId = browser.Id;
-                Log.Write($"launch {tile.Name}: {browser.Id} {url} (pid {r.BrowserPid}){(couch ? " in couch mode" : "")}");
-                if (couch) StartCouchMode(tile, profile, TimeSpan.FromSeconds(30));
+                Log.Write($"launch {tile.Name}: {browser.Id} {url} (pid {r.BrowserPid})");
+                if (surfer)
+                {
+                    bool onChannel = tile.Channels.Count > 0;
+                    r.Channel = onChannel ? Math.Clamp(tile.LastChannel, 0, tile.Channels.Count - 1) : -1;
+                    r.PreviousChannel = -1;
+                    r.TunedAtMs = onChannel ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() : 0;
+                    StartSurfer(r, profile, TimeSpan.FromSeconds(30));
+                }
                 return null;
             }
 
@@ -302,48 +331,110 @@ sealed class AppManager
         return null;
     }
 
-    /// <summary>Connects couch mode to a tile's browser, if the tile wants it and isn't connected.</summary>
-    void StartCouchMode(Tile tile, string profile, TimeSpan wait)
+    /// <summary>Connects a Live Surfer tile to its browser, unless it already is.</summary>
+    void StartSurfer(TileRuntime r, string profile, TimeSpan wait)
     {
-        if (!SiteScripts.Enhances(tile)) return;
+        var tile = r.Tile;
         if (bridges.TryGetValue(tile.Id, out var existing))
         {
             if (!existing.Finished) return;
             existing.Dispose();
         }
-        var site = SiteScripts.For(tile.Url)!;
-        var palette = Theme.Get(config.Theme);
-        var script = SiteScripts.Build(site, new
-        {
-            tile = tile.Name,
-            fg = $"#{palette.Phosphor.R:X2}{palette.Phosphor.G:X2}{palette.Phosphor.B:X2}",
-            bg = $"#{palette.Background.R:X2}{palette.Background.G:X2}{palette.Background.B:X2}",
-            binding = SiteBridge.BindingName,
-        });
+        var script = SurferScript(r);
         if (script == null)
         {
-            Log.Write($"{tile.Name}: couch mode's script for {site.Id} is missing");
+            Log.Write($"{tile.Name}: Live Surfer's script is missing");
             return;
         }
-        var name = tile.Name;
-        var bridge = SiteBridge.Start(name, profile, script, wait);
-        bridge.Message = payload => PageMessage(name, payload);
+        var bridge = SiteBridge.Start(tile.Name, profile, script, wait);
+        var id = tile.Id;
+        // Pages talk on a background thread; the tile list belongs to the UI.
+        bridge.Message = (session, payload) => ui.Post(_ => SurferMessage(id, session, payload), null);
         bridges[tile.Id] = bridge;
     }
 
-    static void PageMessage(string tileName, string payload)
+    string? SurferScript(TileRuntime r) =>
+        LiveSurfer.BuildScript(r.Tile, Theme.Get(config.Theme), r.Channel, r.PreviousChannel, r.TunedAtMs);
+
+    /// <summary>Gives a Live Surfer tile's pages its latest channels and settings.</summary>
+    async Task PushSurferAsync(TileRuntime r)
     {
+        if (!bridges.TryGetValue(r.Tile.Id, out var bridge) || bridge.Finished) return;
+        var script = SurferScript(r);
+        if (script != null) await bridge.SetScriptAsync(script);
+    }
+
+    /// <summary>A Live Surfer page asking for something: a channel change, or a channel added or removed.</summary>
+    async void SurferMessage(string tileId, string session, string payload)
+    {
+        if (For(tileId) is not { } r || !bridges.TryGetValue(tileId, out var bridge)) return;
+        var tile = r.Tile;
         try
         {
             using var message = System.Text.Json.JsonDocument.Parse(payload);
-            var root = message.RootElement;
-            if (root.TryGetProperty("t", out var type) && type.GetString() == "log" && root.TryGetProperty("msg", out var text))
+            var m = message.RootElement;
+            string Text(string name) => m.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString()! : "";
+            int Number(string name) => m.TryGetProperty(name, out var v) && v.TryGetInt32(out var n) ? n : -1;
+
+            switch (Text("t"))
             {
-                var line = text.GetString() ?? "";
-                Log.Write($"{tileName} couch mode: {(line.Length > 300 ? line[..300] + "…" : line)}");
+                case "log":
+                {
+                    var line = Text("msg");
+                    Log.Write($"{tile.Name}: {(line.Length > 300 ? line[..300] + "…" : line)}");
+                    break;
+                }
+                case "tune":
+                {
+                    int index = Number("index");
+                    if (index < 0 || index >= tile.Channels.Count) return;
+                    if (r.Channel >= 0 && r.Channel != index) r.PreviousChannel = r.Channel;
+                    r.Channel = index;
+                    r.TunedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    tile.LastChannel = index;
+                    config.Save();
+                    Log.Write($"{tile.Name}: channel {index + 1}, {tile.Channels[index].Name}");
+                    // New pages need to know where they are before they load.
+                    await PushSurferAsync(r);
+                    await bridge.NavigateAsync(session, tile.Channels[index].Url);
+                    break;
+                }
+                case "add":
+                {
+                    var url = Text("url");
+                    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http")) return;
+                    var name = Text("name").Trim();
+                    tile.Channels.Add(new LiveChannel { Name = name.Length > 0 ? name : uri.Host.ToUpperInvariant(), Url = url });
+                    r.Channel = tile.Channels.Count - 1;
+                    tile.LastChannel = r.Channel;
+                    config.Save();
+                    Log.Write($"{tile.Name}: added channel {tile.Channels.Count}, {name}: {url}");
+                    await PushSurferAsync(r);
+                    break;
+                }
+                case "remove":
+                {
+                    int index = Number("index");
+                    if (index < 0 || index >= tile.Channels.Count) return;
+                    Log.Write($"{tile.Name}: removed channel {index + 1}, {tile.Channels[index].Name}");
+                    tile.Channels.RemoveAt(index);
+                    r.Channel = Shift(r.Channel, index);
+                    r.PreviousChannel = Shift(r.PreviousChannel, index);
+                    tile.LastChannel = Math.Max(0, Shift(tile.LastChannel, index));
+                    config.Save();
+                    await PushSurferAsync(r);
+                    break;
+                }
             }
         }
         catch (System.Text.Json.JsonException) { }
+        catch (Exception e)
+        {
+            Log.Write($"{tile.Name}: {e.Message}");
+        }
+
+        // After channel <removed> is taken out: the same channel's new number.
+        static int Shift(int channel, int removed) => channel == removed ? -1 : channel > removed ? channel - 1 : channel;
     }
 
     void Focus(TileRuntime r, bool userAction)
@@ -355,7 +446,7 @@ sealed class AppManager
 
         switch (r.Tile.Kind)
         {
-            case TileKind.Web when userAction:
+            case TileKind.Web or TileKind.LiveSurfer when userAction:
                 _ = RestoreFullscreenAsync(r, h);
                 break;
             case TileKind.App when r.Tile.ForceFullscreen && !Native.CoversMonitor(h):
@@ -417,7 +508,7 @@ sealed class AppManager
     IntPtr PickMain(TileRuntime r)
     {
         IEnumerable<WinInfo> candidates = r.Windows;
-        if (r.Tile.Kind == TileKind.Web)
+        if (r.Tile.InBrowser)
         {
             // An app-mode window is titled with just the page title; a normal
             // browser window (a stray one, like a welcome page) ends
