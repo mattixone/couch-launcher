@@ -22,6 +22,7 @@ sealed class MainWindow : Window
     public AppManager Apps { get; }
     public Theme Palette => Theme.Get(Config.Theme);
     public string HotkeyProblems { get; private set; } = "";
+    public int ControllersConnected => pad.Connected;
 
     readonly Grid stage = new() { Width = 1920, Height = 1080 };
     readonly Border screenHost = new();
@@ -31,7 +32,9 @@ sealed class MainWindow : Window
     readonly TextBlock title = new(), subtitle = new(), clock = new(), date = new(), hint = new(), status = new();
     readonly DispatcherTimer ticker = new() { Interval = TimeSpan.FromMilliseconds(500) };
     readonly DispatcherTimer statusTimer = new();
+    readonly DispatcherTimer startupTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     readonly HomeScreen home;
+    readonly Gamepad pad;
 
     Screen screen;
     Modal? modal;
@@ -42,6 +45,11 @@ sealed class MainWindow : Window
     string? lastTileId;
     int desktopTicks;
     bool allowClose;
+    /// <summary>Until when the launcher keeps reclaiming the front after it starts.</summary>
+    DateTime startupHoldUntil;
+    /// <summary>Consecutive startup checks that found the launcher already in front.</summary>
+    int startupSettled;
+    IntPtr startupLastThief;
 
     public MainWindow()
     {
@@ -52,6 +60,8 @@ sealed class MainWindow : Window
 
         Config = LauncherConfig.Load();
         Apps = new AppManager(Config);
+        pad = new Gamepad(() => hwnd != IntPtr.Zero && Native.GetForegroundWindow() == hwnd,
+            nav => HandleNav(nav), ShowHome);
         BuildChrome();
         Content = new Viewbox { Stretch = Stretch.Uniform, Child = stage };
 
@@ -75,10 +85,12 @@ sealed class MainWindow : Window
             Native.UnregisterHotKey(hwnd, HotkeyHome);
             Native.UnregisterHotKey(hwnd, HotkeySwitch);
             MediaKeyRemap.Remove();
+            pad.Stop();
             WebRemote.Stop();
         };
         Application.Current.SessionEnding += (_, _) => allowClose = true;
         ticker.Tick += (_, _) => Tick();
+        startupTimer.Tick += (_, _) => StartupHold();
         statusTimer.Tick += (_, _) =>
         {
             statusTimer.Stop();
@@ -95,12 +107,14 @@ sealed class MainWindow : Window
         Log.Write($"launcher v{Updater.Version} started");
         LoginStartup.Apply(Config.StartAtLogin);
         MediaKeyRemap.Install(AShouldSelect);
+        ApplyController();
         PhoneInput.ASelects = () => Dispatcher.Invoke(AShouldSelect);
         PhoneInput.AllowPower = Config.PhoneRemotePower;
         WebRemote.Handler = PhoneInput.Handle;
         WebRemote.Disconnected = PhoneInput.ReleaseAll;
         WebRemote.Apply(Config);
         BringToFront();
+        BeginStartupHold();
         await Apps.DiscoverAsync();
         Apps.Refresh();
         home.Tick();
@@ -240,6 +254,61 @@ sealed class MainWindow : Window
         if (hwnd != IntPtr.Zero && !Native.ForceForeground(hwnd)) Log.Write("couldn't bring the launcher to the front");
     }
 
+    /// <summary>
+    /// Started with Windows, the launcher's one attempt at the front usually
+    /// loses: Explorer is still building the desktop and taskbar, other
+    /// startup apps are opening windows, and Windows won't let a background
+    /// program take focus. It ends up as a taskbar button. So for the first
+    /// couple of minutes keep reclaiming the front, until it has stayed there
+    /// for a while or you've opened something.
+    /// </summary>
+    void BeginStartupHold()
+    {
+        startupHoldUntil = DateTime.Now.AddMinutes(2);
+        startupSettled = 0;
+        startupTimer.Start();
+    }
+
+    void EndStartupHold() => startupTimer.Stop();
+
+    void StartupHold()
+    {
+        if (DateTime.Now > startupHoldUntil)
+        {
+            EndStartupHold();
+            return;
+        }
+        var foreground = Native.GetForegroundWindow();
+        if (foreground == hwnd && WindowState != WindowState.Minimized)
+        {
+            if (++startupSettled >= 10) EndStartupHold();
+            return;
+        }
+        startupSettled = 0;
+        // Log each window that takes the front once, not every second.
+        if (foreground != startupLastThief)
+        {
+            startupLastThief = foreground;
+            Log.Write($"startup: reclaiming the front from \"{Native.WindowTitle(foreground)}\" ({Native.ClassName(foreground)})");
+        }
+        BringToFront();
+    }
+
+    /// <summary>
+    /// The TV can come up after the launcher (HDMI handshakes late, or the
+    /// resolution changes as Windows signs in), leaving the window sized for
+    /// a screen that's gone. Maximise again to fill whatever is there now.
+    /// Games change the resolution too, so leave the window alone while an
+    /// app is in front — re-maximising activates it.
+    /// </summary>
+    void Refit()
+    {
+        if (WindowState != WindowState.Maximized) return;
+        if (!startupTimer.IsEnabled && Native.GetForegroundWindow() != hwnd) return;
+        WindowState = WindowState.Normal;
+        WindowState = WindowState.Maximized;
+    }
+
     public void ExitLauncher()
     {
         Log.Write("exit from settings");
@@ -260,6 +329,8 @@ sealed class MainWindow : Window
                 ShowScreen(new SettingsScreen(this));
                 return;
         }
+
+        EndStartupHold();
 
         if (screen != home) ShowScreen(home);
         home.FocusTile(tile.Id);
@@ -311,6 +382,7 @@ sealed class MainWindow : Window
 
     void OnSwitchHotkey()
     {
+        EndStartupHold();
         if (screen is SwitcherScreen open)
         {
             open.Advance();
@@ -351,33 +423,32 @@ sealed class MainWindow : Window
     void OnKey(object sender, KeyEventArgs e)
     {
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        var nav = Input.Map(key);
         // Open question going in: does Windows hand the Retroid's A button
         // (a media key) to the launcher, or only to whatever's playing?
         if (key is Key.MediaPlayPause or Key.Play) Log.Write("play/pause key reached the launcher");
-        if (modal != null)
-        {
-            if (nav != Nav.None)
-            {
-                modal.OnNav(nav);
-                e.Handled = true;
-            }
-            return;
-        }
-        if (screen.CapturesTyping)
-        {
-            if (key == Key.Escape)
-            {
-                screen.OnNav(Nav.Back);
-                e.Handled = true;
-            }
-            return;
-        }
-        if (nav != Nav.None)
-        {
-            screen.OnNav(nav);
-            e.Handled = true;
-        }
+        // Screens with text fields keep every key but Escape for typing.
+        if (modal == null && screen.CapturesTyping && key != Key.Escape) return;
+        e.Handled = HandleNav(Input.Map(key));
+    }
+
+    /// <summary>Keys and the controller both end up here.</summary>
+    bool HandleNav(Nav nav)
+    {
+        if (nav == Nav.None) return false;
+        if (modal != null) modal.OnNav(nav);
+        else if (!screen.CapturesTyping) screen.OnNav(nav);
+        else if (nav == Nav.Back) screen.OnNav(nav);
+        else return false;
+        return true;
+    }
+
+    /// <summary>Starts or stops the controller to match the settings.</summary>
+    public void ApplyController()
+    {
+        var problem = pad.Configure(Config.Controller, Config.ControllerHomeCombo, Config.ControllerHoldMs);
+        if (problem == null) return;
+        Log.Write("controller: " + problem);
+        SetStatus(problem, 20);
     }
 
     void RegisterHotkeys()
@@ -403,6 +474,12 @@ sealed class MainWindow : Window
 
     IntPtr WndProc(IntPtr h, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (msg == Native.WM_DISPLAYCHANGE)
+        {
+            Log.Write("display changed — refitting");
+            Dispatcher.InvokeAsync(Refit, DispatcherPriority.Background);
+            return IntPtr.Zero;
+        }
         if (msg != Native.WM_HOTKEY) return IntPtr.Zero;
         handled = true;
         switch (wParam.ToInt32())
