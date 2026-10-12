@@ -86,6 +86,7 @@ sealed class MainWindow : Window
             Native.UnregisterHotKey(hwnd, HotkeySwitch);
             MediaKeyRemap.Remove();
             pad.Stop();
+            WebRemote.Stop();
         };
         Application.Current.SessionEnding += (_, _) => allowClose = true;
         ticker.Tick += (_, _) => Tick();
@@ -107,6 +108,11 @@ sealed class MainWindow : Window
         LoginStartup.Apply(Config.StartAtLogin);
         MediaKeyRemap.Install(AShouldSelect);
         ApplyController();
+        PhoneInput.ASelects = () => Dispatcher.Invoke(AShouldSelect);
+        PhoneInput.AllowPower = Config.PhoneRemotePower;
+        WebRemote.Handler = PhoneInput.Handle;
+        WebRemote.Disconnected = PhoneInput.ReleaseAll;
+        WebRemote.Apply(Config);
         BringToFront();
         BeginStartupHold();
         await Apps.DiscoverAsync();
