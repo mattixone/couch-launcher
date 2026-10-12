@@ -41,6 +41,8 @@ sealed class AppManager
     readonly Dictionary<string, TileRuntime> byId = new();
     readonly Dictionary<IntPtr, DateTime> firstSeen = new();
     readonly Dictionary<IntPtr, DateTime> closeSent = new();
+    /// <summary>Couch mode's connection to each web tile's browser, by tile id.</summary>
+    readonly Dictionary<string, SiteBridge> bridges = new();
     DateTime lastDiscovery = DateTime.MinValue;
     /// <summary>After closing the Steam tile, keep sending Steam's normal
     /// window to the tray until this time.</summary>
@@ -111,6 +113,12 @@ sealed class AppManager
                         names.Contains(w.Process, StringComparer.OrdinalIgnoreCase) &&
                         (title.Length == 0 || w.Title.Contains(title, StringComparison.OrdinalIgnoreCase))));
                     break;
+            }
+
+            if (bridges.TryGetValue(tile.Id, out var bridge) && (bridge.Finished || r.BrowserPid == null && !r.PendingFocus))
+            {
+                bridge.Dispose();
+                bridges.Remove(tile.Id);
             }
 
             if (!r.Running)
@@ -231,6 +239,8 @@ sealed class AppManager
                 r.BrowserPid = hit.Pid;
                 r.BrowserId = hit.BrowserId;
                 Log.Write($"found {r.Tile.Name} already open in {hit.BrowserId} (pid {hit.Pid})");
+                // Opened before the launcher (re)started: pick couch mode back up.
+                StartCouchMode(r.Tile, ProfileDir(r.Tile, hit.BrowserId), TimeSpan.Zero);
                 break;
             }
         }
@@ -248,19 +258,23 @@ sealed class AppManager
                 if (!Uri.TryCreate(tile.Url.Trim(), UriKind.Absolute, out var url) || url.Host.Length == 0)
                     return $"{name}: THE WEB ADDRESS LOOKS WRONG";
 
+                var profile = ProfileDir(tile, browser.Id);
                 var start = new ProcessStartInfo(Browsers.PathOf(browser)!) { UseShellExecute = false };
-                start.ArgumentList.Add($"--user-data-dir={ProfileDir(tile, browser.Id)}");
+                start.ArgumentList.Add($"--user-data-dir={profile}");
                 start.ArgumentList.Add($"--app={url.AbsoluteUri}");
                 start.ArgumentList.Add("--start-fullscreen");
                 start.ArgumentList.Add("--no-first-run");
                 start.ArgumentList.Add("--no-default-browser-check");
                 start.ArgumentList.Add("--hide-crash-restore-bubble");
                 if (tile.TvMode) start.ArgumentList.Add($"--user-agent={config.TvUserAgent}");
+                bool couch = SiteScripts.Enhances(tile);
+                if (couch) SiteBridge.AddLaunchFlags(start, profile);
 
                 using var process = Process.Start(start);
                 r.BrowserPid = process?.Id;
                 r.BrowserId = browser.Id;
-                Log.Write($"launch {tile.Name}: {browser.Id} {url} (pid {r.BrowserPid})");
+                Log.Write($"launch {tile.Name}: {browser.Id} {url} (pid {r.BrowserPid}){(couch ? " in couch mode" : "")}");
+                if (couch) StartCouchMode(tile, profile, TimeSpan.FromSeconds(30));
                 return null;
             }
 
@@ -284,6 +298,50 @@ sealed class AppManager
             }
         }
         return null;
+    }
+
+    /// <summary>Connects couch mode to a tile's browser, if the tile wants it and isn't connected.</summary>
+    void StartCouchMode(Tile tile, string profile, TimeSpan wait)
+    {
+        if (!SiteScripts.Enhances(tile)) return;
+        if (bridges.TryGetValue(tile.Id, out var existing))
+        {
+            if (!existing.Finished) return;
+            existing.Dispose();
+        }
+        var site = SiteScripts.For(tile.Url)!;
+        var palette = Theme.Get(config.Theme);
+        var script = SiteScripts.Build(site, new
+        {
+            tile = tile.Name,
+            fg = $"#{palette.Phosphor.R:X2}{palette.Phosphor.G:X2}{palette.Phosphor.B:X2}",
+            bg = $"#{palette.Background.R:X2}{palette.Background.G:X2}{palette.Background.B:X2}",
+            binding = SiteBridge.BindingName,
+        });
+        if (script == null)
+        {
+            Log.Write($"{tile.Name}: couch mode's script for {site.Id} is missing");
+            return;
+        }
+        var name = tile.Name;
+        var bridge = SiteBridge.Start(name, profile, script, wait);
+        bridge.Message = payload => PageMessage(name, payload);
+        bridges[tile.Id] = bridge;
+    }
+
+    static void PageMessage(string tileName, string payload)
+    {
+        try
+        {
+            using var message = System.Text.Json.JsonDocument.Parse(payload);
+            var root = message.RootElement;
+            if (root.TryGetProperty("t", out var type) && type.GetString() == "log" && root.TryGetProperty("msg", out var text))
+            {
+                var line = text.GetString() ?? "";
+                Log.Write($"{tileName} couch mode: {(line.Length > 300 ? line[..300] + "…" : line)}");
+            }
+        }
+        catch (System.Text.Json.JsonException) { }
     }
 
     void Focus(TileRuntime r, bool userAction)

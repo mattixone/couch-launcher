@@ -28,6 +28,14 @@ else
 fi
 echo "==> Couch Launcher $VERSION -> $REPO_URL"
 
+# Ship the latest phone remote page. Keeps the copy in web/ if offline.
+if curl -fsSL "https://raw.githubusercontent.com/mattixone/CouchControllerWeb/main/www/index.html" -o web/index.html.new; then
+  mv web/index.html.new web/index.html
+else
+  rm -f web/index.html.new
+  echo "    (couldn't fetch the phone remote page; using the copy in web/)"
+fi
+
 # GitHub holds the release history; start the local copy fresh each time.
 rm -rf build/publish build/releases
 dotnet publish CouchLauncher.csproj -c Release -r win-x64 --self-contained true \

@@ -30,10 +30,22 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The phone remote page, from github.com/mattixone/CouchControllerWeb.
+         release.sh refreshes it before each build. -->
+    <EmbeddedResource Include="web\index.html" LogicalName="CouchLauncher.web.index.html" />
+    <!-- Couch mode's scripts for streaming sites (see SiteScripts.cs). -->
+    <EmbeddedResource Include="sites\*.js" LogicalName="CouchLauncher.sites.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Installer + self-updater. Keep in step with vpk in .config/dotnet-tools.json. -->
     <PackageReference Include="Velopack" Version="1.2.0" />
     <!-- WMI, to find browser windows the launcher opened before it last restarted. -->
     <PackageReference Include="System.Management" Version="10.0.12" />
+    <!-- QR code for the phone remote, so guests can scan it off the TV. -->
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <!-- Only for Settings › DRM CHECK: can a browser built into the launcher play the streaming sites? -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
   </ItemGroup>
 
 </Project>

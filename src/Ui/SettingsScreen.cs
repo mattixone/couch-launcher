@@ -3,7 +3,7 @@ using System.Windows.Controls;
 
 namespace CouchLauncher.Ui;
 
-/// <summary>Theme, start-with-Windows, tile editing, updates. D-pad friendly.</summary>
+/// <summary>Theme, start-with-Windows, phone remote, tile editing, updates. D-pad friendly.</summary>
 sealed class SettingsScreen : Screen
 {
     sealed record Row(Func<string> Label, Action Select, Action<int>? Adjust = null);
@@ -21,8 +21,12 @@ sealed class SettingsScreen : Screen
                 () => Host.SetTheme(Host.Palette.Next),
                 step => Host.SetTheme(step > 0 ? Host.Palette.Next : Host.Palette.Previous)),
             new(() => $"START WITH WINDOWS:  {(Host.Config.StartAtLogin ? "ON" : "OFF")}", ToggleStartup),
+            new(() => $"PHONE REMOTE   ◄ {(Host.Config.PhoneRemote ? "ON" : "OFF")} ►",
+                () => Host.ShowModal(new PhoneRemoteModal(Host)),
+                _ => TogglePhoneRemote()),
             new(() => "EDIT TILES", () => Host.ShowScreen(new EditorScreen(Host))),
             new(() => "CHECK FOR UPDATES", CheckForUpdates),
+            new(() => "DRM CHECK", CheckDrm),
             new(() => "EXIT THE LAUNCHER", ConfirmExit),
         };
     }
@@ -69,6 +73,7 @@ sealed class SettingsScreen : Screen
         if (note.Length > 0)
         {
             var noteText = Crt.Text(note, 24, 0.9);
+            noteText.TextWrapping = TextWrapping.Wrap;
             noteText.Margin = new Thickness(4, 10, 0, 0);
             list.Children.Add(noteText);
         }
@@ -128,11 +133,28 @@ sealed class SettingsScreen : Screen
         Host.RebuildScreen();
     }
 
+    void TogglePhoneRemote()
+    {
+        Host.Config.PhoneRemote = !Host.Config.PhoneRemote;
+        Host.Config.Save();
+        WebRemote.Apply(Host.Config);
+        note = WebRemote.Problem.Length > 0 ? $"(PHONE REMOTE {WebRemote.Problem})" : "";
+        Host.RebuildScreen();
+    }
+
     async void CheckForUpdates()
     {
         note = "CHECKING…";
         Host.RebuildScreen();
         note = await Host.RunUpdate(automatic: false);
+        Host.RebuildScreen();
+    }
+
+    async void CheckDrm()
+    {
+        note = "CHECKING…";
+        Host.RebuildScreen();
+        note = await DrmCheck.RunAsync(new System.Windows.Interop.WindowInteropHelper(Host).Handle);
         Host.RebuildScreen();
     }
 
