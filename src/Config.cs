@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace CouchLauncher;
 
-enum TileKind { Web, App, Steam, Power, Settings, LiveSurfer }
+enum TileKind { Web, App, Steam, Power, Settings, LiveSurfer, Folder, Back }
 
 /// <summary>
 /// One tile on the home screen. A single flat record for every kind — only
@@ -63,8 +63,13 @@ sealed class Tile
     public bool BlockPopups { get; set; } = true;
     /// <summary>Custom icon (image or .exe). Empty = work it out.</summary>
     public string IconPath { get; set; } = "";
+    /// <summary>Folder on the home screen. Tiles with the same name (any
+    /// case) share one folder tile; empty = straight on the home screen.</summary>
+    public string Folder { get; set; } = "";
 
-    [JsonIgnore] public bool IsBuiltIn => Kind is TileKind.Power or TileKind.Settings;
+    [JsonIgnore] public string FolderKey => Folder.Trim().ToUpperInvariant();
+    /// <summary>Made up by the home screen, never saved: power, settings, and folders' tiles.</summary>
+    [JsonIgnore] public bool IsBuiltIn => Kind is TileKind.Power or TileKind.Settings or TileKind.Folder or TileKind.Back;
 }
 
 /// <summary>One of a Live Surfer tile's channels: the page where it plays.</summary>
@@ -79,6 +84,12 @@ static class BuiltIn
 {
     public static readonly Tile Power = new() { Id = "builtin-power", Name = "POWER", Kind = TileKind.Power };
     public static readonly Tile Settings = new() { Id = "builtin-settings", Name = "SETTINGS", Kind = TileKind.Settings };
+    /// <summary>First tile inside a folder: back out to the home screen.</summary>
+    public static readonly Tile Back = new() { Id = "builtin-back", Name = "BACK", Kind = TileKind.Back };
+
+    /// <summary>The tile standing in for a folder on the home screen.</summary>
+    public static Tile Folder(string name) =>
+        new() { Id = "folder-" + name.Trim().ToUpperInvariant(), Name = name.Trim(), Kind = TileKind.Folder, Folder = name };
 }
 
 sealed class LauncherConfig
@@ -88,6 +99,8 @@ sealed class LauncherConfig
 
     public string Theme { get; set; } = "FALLOUT";
     public bool StartAtLogin { get; set; } = true;
+    /// <summary>LARGE, MEDIUM or SMALL: 4, 5 or 6 tiles to a row.</summary>
+    public string TileSize { get; set; } = "LARGE";
     public string HomeHotkey { get; set; } = "Ctrl+Alt+Shift+H";
     public string SwitchHotkey { get; set; } = "Ctrl+Alt+Shift+S";
     /// <summary>Xbox-style controllers drive the launcher too.</summary>
