@@ -62,6 +62,11 @@ sealed class MainWindow : Window
         Apps = new AppManager(Config);
         pad = new Gamepad(() => hwnd != IntPtr.Zero && Native.GetForegroundWindow() == hwnd,
             nav => HandleNav(nav), ShowHome);
+        pad.XPressed += () =>
+        {
+            if (Apps.ByWindow(Native.GetForegroundWindow()) is { Tile.Kind: TileKind.LiveSurfer } surfer)
+                Apps.ToggleSurferGuide(surfer.Tile);
+        };
         BuildChrome();
         Content = new Viewbox { Stretch = Stretch.Uniform, Child = stage };
 

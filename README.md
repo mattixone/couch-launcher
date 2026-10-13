@@ -17,13 +17,16 @@ Both can be changed in `config.json`.
 
 ## Game controller
 
-Any Xbox-style controller works too (on by default; Settings › Controller).
+Any Xbox-style controller works too (on by default; Settings › Advanced ›
+Controller).
 In the launcher the d-pad or left stick moves, A opens, B goes back. Inside
 another app the controller is left alone, except:
 
 | Hold for a second | Does |
 |---|---|
 | `Back` + `Start` (View + Menu) | Back to the tiles, from anywhere |
+
+In a Live Surfer tile, X also opens the TV guide page (and X again goes back).
 
 The combo and hold time are `ControllerHomeCombo` and `ControllerHoldMs` in
 `config.json`. PlayStation and Switch pads need Steam Input or DS4Windows to
@@ -71,23 +74,28 @@ changes what's on screen and what the buttons do.
    a start page (it opens there until it has channels).
 2. Open the tile. Sign in to each service you use, once. The tile keeps its
    own sign-ins. Some sites sign in through a pop-up, so turn POP-UP WINDOWS
-   to ALLOWED while you do this, then back to BLOCKED.
+   (under the tile's ADVANCED) to ALLOWED while you do this, then back to
+   BLOCKED.
 3. Find a live channel and start it playing. Press **B** and choose
    **+ ADD THIS CHANNEL**. Do that for each channel you want. B ›
    BROWSE A SERVICE… gets you to the other sites.
-4. Pick your city under TV GUIDE (see below). Back in Edit tiles you can
-   also rename, reorder and remove channels, or add one by pasting its
-   address.
+4. Back in Edit tiles you can rename, reorder and remove channels, or add
+   one by pasting its address.
 
 **Using it**
 
-- **B:** the menu, from anywhere. It has your channels (with what's on
-  each), TV GUIDE, ADD THIS CHANNEL, or RENAME and REMOVE for the one
-  you're on, LAST CHANNEL, BROWSE A SERVICE…, PREVIOUS PAGE, and THE SITE'S
-  OWN SCREEN, which shows the normal site until you leave that page.
+- **B:** the menu, from anywhere. It has your channels, ADD THIS CHANNEL or
+  RENAME and REMOVE for the one you're on, TV GUIDE, LAST CHANNEL, BROWSE A
+  SERVICE…, PREVIOUS PAGE, and THE SITE'S OWN SCREEN, which shows the normal
+  site until you leave that page.
 - **On a channel:** ◄► change channel (a few quick presses skip channels),
-  ▲▼ change the PC's volume, A shows what's on. Press A again while it's up
-  for the TV guide.
+  ▲▼ change the PC's volume, A shows the channel bar.
+- **TV guide:** **X** opens the TV guide page, Freeview's by default, and X
+  again goes back to the channel. A twice, G on a keyboard, or B › TV GUIDE
+  do the same. X works with an Xbox-style controller. If the Retroid's X
+  doesn't, set it in the Retroid app to send G. To use a different guide
+  page, open it in the tile and choose B › USE THIS PAGE AS THE TV GUIDE, or
+  set it under the tile's ADVANCED › TV GUIDE PAGE.
 - **On a show or film:** A plays/pauses, ◄► jump 10 seconds, ▲▼ volume.
 - **Anywhere else** the keys belong to the site, so you can browse it with
   the D-pad and A.
@@ -95,47 +103,11 @@ changes what's on screen and what the buttons do.
   is hidden. If a channel doesn't start by itself, Live Surfer presses its
   Play button. If it still isn't playing after 15 seconds, it shows you the
   page so you can start it.
-- **What's on:** when a channel comes on, the channel bar shows for 3
-  seconds with the show, how far through it is, and what's next.
-- **TV guide:** channels down the side, the next two hours across. ▲▼ pick a
-  channel, ◄► move through its shows, A watches whatever's on now (for a
-  later show it says when it starts), B closes.
 - **Renaming:** B › RENAME brings up an on-screen keyboard. Use the D-pad
   and A, or type on the phone remote's keyboard, then DONE.
 - The tile opens on the last channel you watched. Changing channel within a
   site is quick. Changing to another site loads that site, so allow a few
   seconds.
-
-**TV guide**
-
-Show times come from a free TV guide file the launcher downloads every few
-hours, the same kind PVRs use. Edit tiles › TV GUIDE offers two community
-sources, [i.mjh.nz](https://i.mjh.nz/au/) and
-[xmltv.net](https://www.xmltv.net/), for each capital city. Pick your
-city, then CHECK IT to see how many of your channels it matched. If one
-source stops updating, switch to the other. The last download is kept, so
-the guide still works for a while if a download fails.
-
-Finding each channel in the guide:
-
-- **By name:** a channel called "7MATE" finds "7mate Sydney". Names that
-  don't say which channel it is ("WWW.SBS.COM.AU", "ABC IVIEW",
-  "SBS ON DEMAND") aren't matched by name.
-- **By what's on the page, automatically:** a channel the guide can't place
-  sends the launcher what its page says (title, labels, text). Live pages
-  nearly always show the current show's name, and only one guide channel has
-  that show on right now. The channel's name in the address helps too
-  (simulcasts, pages that list several channels). When one guide channel
-  clearly fits, it's used, and a channel named after a web address or a
-  service gets the guide's name. This happens about 6 seconds after a
-  channel starts playing.
-- **B › ⌕ SCAN ALL CHANNELS FOR THE GUIDE** does that for every channel
-  the guide doesn't know yet (or all of them, if it knows them all). It
-  visits each one for a few seconds, then comes back. B stops it.
-- **B › ⌕ FIND IN TV GUIDE** on a channel lists the guide channels its page
-  fits best, with what's on each now, for you to pick. It also has
-  AUTOMATIC and NO GUIDE.
-- **Edit tiles:** each channel's GUIDE button picks from the full list.
 
 **Good to know**
 
@@ -149,12 +121,12 @@ Finding each channel in the guide:
   profile, and the connection is only reachable from the PC itself, never
   the network.
 - **When something stops working:** `launcher.log` has a line for each step
-  (channel changes, Play pressed, TV look on/off, guide downloads, which copy
+  (channel changes, Play pressed, TV look on/off, which copy
   protection the site asked for). The script is `sites/live-surfer.js` in this repo. To try
   a fix without releasing, put an edited copy in
   `CouchLauncherData\sites\live-surfer.js` and it's used from the next page
   load.
-- **Settings › DRM CHECK** shows whether WebView2 (the browser engine apps
+- **Settings › Advanced › DRM CHECK** shows whether WebView2 (the browser engine apps
   can build in) could play these sites. Compare it with the copy protection
   the log says each site asks for.
 

@@ -122,6 +122,17 @@ sealed class SiteBridge : IDisposable
         catch (Exception e) when (e is OperationCanceledException or WebSocketException or ObjectDisposedException) { }
     }
 
+    /// <summary>Runs some script in every page this browser has open.</summary>
+    public async Task EvaluateEverywhereAsync(string expression)
+    {
+        List<string> open;
+        lock (pages)
+        {
+            open = pages.Keys.ToList();
+        }
+        foreach (var session in open) await EvaluateAsync(session, expression);
+    }
+
     /// <summary>Opens an address in one page (the one that asked).</summary>
     public async Task NavigateAsync(string session, string url)
     {

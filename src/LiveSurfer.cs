@@ -26,8 +26,8 @@ static class LiveSurfer
         new("10", "https://10.com.au/"),
     };
 
-    /// <summary>A channel name that says nothing about the channel (see TvGuide.IsVague).</summary>
-    public static bool IsPlaceholderName(string name) => TvGuide.IsVague(name);
+    /// <summary>Freeview's TV guide, the guide page a new Live Surfer tile uses.</summary>
+    public const string DefaultGuidePage = "https://www.freeview.com.au/tv-guide";
 
     public static string OverrideFile => Path.Combine(Paths.Data, "sites", "live-surfer.js");
 
@@ -47,10 +47,8 @@ static class LiveSurfer
     /// The script for a tile's pages, carrying its settings. <paramref name="current"/>
     /// and <paramref name="previous"/> are channel numbers (-1 for none);
     /// <paramref name="tunedAtMs"/> is when the channel was last changed (Unix ms).
-    /// <paramref name="scan"/> is a channel scan under way, <paramref name="notice"/>
-    /// a message for the next page to show; null for none.
     /// </summary>
-    public static string? BuildScript(Tile tile, Theme palette, int current, int previous, long tunedAtMs, object? scan, object? notice)
+    public static string? BuildScript(Tile tile, Theme palette, int current, int previous, long tunedAtMs)
     {
         var code = Read();
         if (code == null) return null;
@@ -61,9 +59,8 @@ static class LiveSurfer
             binding = SiteBridge.BindingName,
             fg = Hex(palette.Phosphor),
             bg = Hex(palette.Background),
-            channels = tile.Channels.Select(c => new { name = c.Name.ToUpperInvariant(), url = c.Url, guideChoice = c.GuideId }),
-            scan,
-            notice,
+            channels = tile.Channels.Select(c => new { name = c.Name.ToUpperInvariant(), url = c.Url }),
+            guidePage = tile.GuidePage,
             current,
             previous,
             tunedAt = tunedAtMs,

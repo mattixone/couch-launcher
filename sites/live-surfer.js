@@ -8,16 +8,12 @@
 //  - The TV look: when a video is playing, it fills the screen and the rest
 //    of the page is hidden. The site's player still does the playing, so
 //    sign-ins and DRM work as normal.
-//  - Keys. B: the menu (channels, guide, add/remove/rename, browse a
+//  - Keys. B: the menu (channels, add/remove/rename, the TV guide, browse a
 //    service), anywhere. Watching a channel: ◄► change channel, ▲▼ volume,
-//    A what's on (A again: the TV guide). Watching anything else: A
-//    play/pause, ◄► 10 s back/forward, ▲▼ volume. Anywhere else the keys
-//    belong to the site, so you can browse it.
-//  - What's on comes from the TV guide the launcher downloads; it sends this
-//    tile's channels' shows when asked (__couchGuide). To find a channel in
-//    the guide, the page sends the launcher clues — its address, title,
-//    labels and text, which nearly always include the show on now — and the
-//    launcher picks the guide channel they fit (__couchScan).
+//    A the channel bar. X (or A twice, or G on a keyboard) opens the TV
+//    guide page — Freeview's unless you picked another — and back again.
+//    Watching anything else: A play/pause, ◄► 10 s back/forward, ▲▼ volume.
+//    Anywhere else the keys belong to the site, so you can browse it.
 //
 // The launcher re-runs this script whenever the list or the channel changes;
 // the copy already running takes the new settings (see the end).
@@ -126,9 +122,11 @@ function current() {
   const byPage = channels().findIndex((c) => isPage(c.url));
   if (byPage >= 0) return byPage;
   // Just changed channel, and the site moved the address on (a redirect, a
-  // player page): still that channel, as long as it's the same site.
+  // player page): still that channel, as long as it's the same site and
+  // this page is the one the channel change loaded.
   const tuned = channels()[S.current];
-  if (tuned && Date.now() - (S.tunedAt || 0) < TUNING_MS &&
+  const loadedForIt = Math.abs(performance.timeOrigin - (S.tunedAt || 0)) < 10000;
+  if (tuned && loadedForIt && Date.now() - (S.tunedAt || 0) < TUNING_MS &&
       absolute(tuned.url) && absolute(tuned.url).host === location.host) return S.current;
   return -1;
 }
@@ -263,102 +261,27 @@ function setTv(on, v) {
 
 let ownScreen = '';     // the page the site's own screen was asked for on
 
-// ---------------------------------------------------------------- TV guide
+// ------------------------------------------------------------ TV guide page
 
-let guide = null;            // { ok, channels: [{ guide, shows: [{start, stop, title, episode, desc}] }] }
-let guideAskedAt = 0;
+const onGuidePage = () => !!S.guidePage && isPage(S.guidePage);
 
-function askForGuide(force) {
-  if (!force && Date.now() - guideAskedAt < 10 * 60000) return;
-  guideAskedAt = Date.now();
-  send({ t: 'guide' });
-}
-
-/** A channel's shows, from the guide. */
-const showsFor = (index) => (guide && guide.channels[index] && guide.channels[index].shows) || [];
-
-function showAt(index, time = Date.now()) {
-  return showsFor(index).find((p) => p.start <= time && time < p.stop) || null;
-}
-
-function showAfter(index, time = Date.now()) {
-  return showsFor(index).find((p) => p.start > time) || null;
-}
-
-function clock(ms) {
-  return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, '').toUpperCase();
-}
-
-function untilText(ms) {
-  const minutes = Math.round((ms - Date.now()) / 60000);
-  if (minutes < 60) return `IN ${Math.max(1, minutes)} MIN`;
-  return `AT ${clock(ms)}`;
-}
-
-// ------------------------------------------------- finding it in the guide
-
-/** What the page says about itself, for the launcher to find it in the guide. */
-function collectClues() {
-  const labels = new Set();
-  const add = (value) => {
-    const text = (value || '').replace(/\s+/g, ' ').trim();
-    if (text.length > 1 && text.length < 160 && labels.size < 400) labels.add(text);
-  };
-  for (const m of document.querySelectorAll('meta[property^="og:"], meta[name="description"], meta[name="title"], meta[name^="twitter:"]')) add(m.content);
-  for (const el of document.querySelectorAll('h1, h2, h3, [aria-label], img[alt], [title]')) {
-    add(el.getAttribute('aria-label'));
-    add(el.getAttribute('alt'));
-    add(el.getAttribute('title'));
-    if (/^H[123]$/.test(el.tagName)) add(el.textContent);
+/** X: the TV guide page, or from it back to the channel you were on. */
+function toggleGuide() {
+  if (onGuidePage()) {
+    if (channels()[S.current]) tune(S.current);
+    else history.back();
+    return;
   }
-  // Structured data many sites carry for search engines: names of shows and channels.
-  for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
-    for (const m of (s.textContent || '').matchAll(/"(?:name|alternateName|headline)"\s*:\s*"([^"]{2,120})"/g)) add(m[1]);
-  }
-  const parts = [];
-  let size = 0;
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-    acceptNode: (node) => (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(node.parentNode.nodeName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
-  });
-  while (walker.nextNode() && size < 60000) {
-    const text = walker.currentNode.nodeValue.replace(/\s+/g, ' ').trim();
-    if (text) { parts.push(text); size += text.length + 3; }
-  }
-  return { url: location.href, title: document.title || '', labels: [...labels], text: parts.join(' | ') };
+  if (!S.guidePage) return toast('NO TV GUIDE PAGE SET — SETTINGS › EDIT TILES › ADVANCED');
+  closeMenu();
+  closeRename();
+  hideBar();
+  log(`TV guide: ${S.guidePage}`);
+  location.assign(S.guidePage);
 }
-
-let cluesSentFor = '';
-function sendClues(index, why) {
-  cluesSentFor = location.href + '#' + index;
-  log(`clues for ${channels()[index].name} (${why})`);
-  send({ t: 'clues', index, why, ...collectClues() });
-}
-
-/** The launcher's answer: which guide channel the page looks like. */
-window.__couchScan = (reply) => {
-  const channel = channels()[reply.index];
-  if (!channel) return;
-  if (reply.matched) toast(`TV GUIDE: ${channel.name} IS ${reply.matched}`, 5);
-  if (reply.why !== 'find') return;
-  if (ui.toast) ui.toast.classList.remove('on');      // "LOOKING…"
-  if (reply.noGuide) return toast("NO TV GUIDE YET — CHECK SETTINGS › EDIT TILES › TV GUIDE", 8);
-  const pick = (id) => () => send({ t: 'match', index: reply.index, id });
-  const entries = reply.candidates.map((c) => ({
-    label: c.name, tag: c.now ? `NOW: ${c.now}` : '', run: pick(c.id),
-  }));
-  if (!entries.length) entries.push({ note: true, label: "NOTHING ON THIS PAGE MATCHED THE GUIDE. PICK IT IN SETTINGS › EDIT TILES › THE CHANNEL'S GUIDE BUTTON." });
-  entries.push({ label: 'AUTOMATIC (BY NAME)', extra: true, gap: true, run: pick('') });
-  entries.push({ label: 'NO GUIDE FOR THIS CHANNEL', extra: true, run: pick('none') });
-  openMenu(entries, `WHICH IS ${channel.name}?`);
+window.__couchToggleGuide = () => {
+  try { toggleGuide(); } catch (e) { log('guide: ' + e); }
 };
-
-/** Should this channel's page send clues by itself? A scan, or a channel the guide can't place. */
-function wantsClues(index) {
-  if (S.scan && S.scan.index === index) return 'scan';
-  const channel = channels()[index];
-  if (guide && guide.ok && channel && !channel.guideChoice && guide.channels[index] && !guide.channels[index].guide) return 'auto';
-  return '';
-}
 
 // ---------------------------------------------------------------- on screen
 
@@ -395,8 +318,6 @@ function buildUi() {
         .mid { flex: 1; min-width: 0; }
         .name { font-size: 3vh; font-weight: bold; opacity: .8; text-transform: uppercase; }
         .now { font-size: 4.4vh; font-weight: bold; margin-top: .6vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .prog { height: .8vh; margin-top: 1.2vh; border: 1px solid ${rgba(FG, 0.6)}; }
-        .prog div { height: 100%; background: ${FG}; }
         .sub { font-size: 2.4vh; opacity: .75; margin-top: 1vh; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .right { text-align: right; }
         .clock { font-size: 4.6vh; font-weight: bold; }
@@ -421,8 +342,6 @@ function buildUi() {
         .item .tag { opacity: .6; font-size: 2.2vh; font-weight: normal; }
         .hint { font-size: 2.2vh; opacity: .55; margin-top: 2vh; }
 
-        .banner { position: absolute; top: 6vh; left: 50%; transform: translateX(-50%); padding: 1.6vh 2vw; ${panel}
-                  font-size: 2.8vh; font-weight: bold; display: none; white-space: nowrap; }
         .toast { position: absolute; top: 16vh; left: 50%; transform: translateX(-50%); max-width: 60vw; padding: 1.6vh 2vw; ${panel}
                  font-size: 2.8vh; opacity: 0; transition: opacity .2s; text-transform: uppercase; }
 
@@ -437,58 +356,24 @@ function buildUi() {
         .key.mid2 { grid-column: span 2; }
         .key.sel { border-color: ${FG}; background: ${rgba(FG, 0.2)}; box-shadow: 0 0 18px ${rgba(FG, 0.5)}; font-weight: bold; }
 
-        .guide { position: absolute; inset: 0; display: none; flex-direction: column; }
-        .gtop { height: 31vh; display: flex; padding: 4vh 4vw 2vh; }
-        .gdetail { width: 56vw; padding: 2.4vh 2vw; ${panel} overflow: hidden; }
-        .gchan { font-size: 2.4vh; opacity: .7; letter-spacing: .1em; }
-        .gtitle { font-size: 4.2vh; font-weight: bold; margin-top: .8vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .gwhen { font-size: 2.5vh; margin-top: .8vh; }
-        .gdesc { font-size: 2.2vh; opacity: .75; margin-top: 1vh; line-height: 1.35; max-height: 9vh; overflow: hidden; }
-        .ggrid { flex: 1; ${panel} border-width: 3px 0 0 0; padding: 1.6vh 2vw 2vh; display: flex; flex-direction: column; }
-        .ghead { display: flex; height: 4vh; font-size: 2.3vh; opacity: .7; }
-        .gday { width: 16vw; font-weight: bold; }
-        .gtimes { position: relative; flex: 1; }
-        .gtimes span { position: absolute; top: 0; padding-left: .4vw; border-left: 1px solid ${rgba(FG, 0.4)}; }
-        .grows { position: relative; flex: 1; overflow: hidden; }
-        .grow { display: flex; height: 7.4vh; margin-bottom: .6vh; }
-        .gname { width: 16vw; font-size: 2.6vh; font-weight: bold; display: flex; align-items: center; padding-left: .4vw;
-                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .gname.cur { text-decoration: underline; }
-        .glane { position: relative; flex: 1; overflow: hidden; }
-        .gshow { position: absolute; top: 0; bottom: 0; padding: 0 .7vw; border: 1px solid ${rgba(FG, 0.35)};
-                 background: ${rgba(FG, 0.05)}; font-size: 2.4vh; display: flex; align-items: center;
-                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .gshow.live { background: ${rgba(FG, 0.12)}; }
-        .gshow.sel { border: 2px solid ${FG}; background: ${rgba(FG, 0.28)}; font-weight: bold; box-shadow: 0 0 18px ${rgba(FG, 0.5)}; z-index: 1; }
-        .gnow { position: absolute; top: 0; bottom: 0; width: 2px; background: ${FG}; box-shadow: 0 0 10px ${FG}; z-index: 2; }
-        .ghint { font-size: 2.1vh; opacity: .55; margin-top: 1vh; }
       </style>
       <div class="wrap">
         <div class="bar">
           <div class="num"></div>
-          <div class="mid"><div class="name"></div><div class="now"></div><div class="prog"><div></div></div><div class="sub"></div></div>
-          <div class="right"><div class="clock"></div><div class="hintA">A: TV GUIDE</div></div>
+          <div class="mid"><div class="name"></div><div class="now"></div><div class="sub"></div></div>
+          <div class="right"><div class="clock"></div><div class="hintA">X: TV GUIDE</div></div>
         </div>
         <div class="vol"><span class="vlabel">VOL</span><div class="cells"></div><span class="vnum"></span></div>
         <div class="menu"><div class="title"></div><div class="items"></div>
           <div class="hint">▲▼ MOVE &nbsp; A CHOOSE &nbsp; B CLOSE</div></div>
         <div class="rename"><div class="title rtitle"></div><div class="field"></div><div class="keys"></div>
           <div class="hint">D-PAD + A, OR TYPE ON A KEYBOARD &nbsp; B CANCEL</div></div>
-        <div class="guide">
-          <div class="gtop"><div class="gdetail"><div class="gchan"></div><div class="gtitle"></div><div class="gwhen"></div><div class="gdesc"></div></div></div>
-          <div class="ggrid">
-            <div class="ghead"><div class="gday"></div><div class="gtimes"></div></div>
-            <div class="grows"></div>
-            <div class="ghint">▲▼ CHANNEL &nbsp; ◄► TIME &nbsp; A WATCH &nbsp; B CLOSE</div>
-          </div>
-        </div>
-        <div class="banner"></div>
         <div class="toast"></div>
       </div>`;
     ui.host = host;
-    for (const name of ['bar', 'num', 'name', 'now', 'prog', 'sub', 'clock', 'hintA', 'vol', 'cells', 'vnum', 'vlabel',
+    for (const name of ['bar', 'num', 'name', 'now', 'sub', 'clock', 'hintA', 'vol', 'cells', 'vnum', 'vlabel',
       'menu', 'title', 'items', 'toast', 'rename', 'rtitle', 'field', 'keys',
-      'guide', 'gchan', 'gtitle', 'gwhen', 'gdesc', 'gday', 'gtimes', 'grows', 'banner']) {
+      ]) {
       ui[name] = shadow.querySelector('.' + name);
     }
   }
@@ -513,24 +398,17 @@ function hideBar() {
   barFor = -2;
 }
 
-/** The channel bar: channel, what's on with how far through, what's next. */
+/** The channel bar: number, channel, what the page calls itself, the time. */
 function showBar(index, status, seconds = BAR_SECONDS) {
   if (!buildUi()) return;
   const channel = channels()[index];
   ui.num.textContent = channel ? String(index + 1).padStart(2, '0') : '--';
-  ui.name.textContent = channel ? channel.name : cleanTitle();
-  const show = channel ? showAt(index) : null;
-  const next = channel ? showAfter(index) : null;
-  ui.now.textContent = show ? show.title + (show.episode ? ` · ${show.episode}` : '') : (channel ? cleanTitle() : '');
-  if (channel && ui.now.textContent.toUpperCase() === channel.name.toUpperCase()) ui.now.textContent = '';
-  ui.prog.style.display = show ? '' : 'none';
-  if (show) ui.prog.firstElementChild.style.width = `${Math.round(100 * (Date.now() - show.start) / (show.stop - show.start))}%`;
-  const parts = [status];
-  if (show) parts.push(`${clock(show.start)}–${clock(show.stop)}`);
-  if (next) parts.push(`NEXT ${clock(next.start)} ${next.title}`);
-  ui.sub.textContent = parts.filter(Boolean).join('  ·  ');
+  ui.name.textContent = channel ? channel.name : '';
+  const title = cleanTitle();
+  ui.now.textContent = channel && title === channel.name.toUpperCase() ? '' : title;
+  ui.sub.textContent = status || '';
   ui.clock.textContent = new Date().toTimeString().slice(0, 5);
-  ui.hintA.style.display = channel ? '' : 'none';
+  ui.hintA.style.display = S.guidePage ? '' : 'none';
   ui.bar.classList.add('on');
   barFor = channel ? index : -1;
   clearTimeout(barTimer);
@@ -576,28 +454,30 @@ const menu = { open: false, entries: [], at: 0, title: '' };
 
 function mainMenu() {
   const now = current();
-  const entries = channels().map((c, i) => {
-    const show = showAt(i);
-    return { label: `${String(i + 1).padStart(2, '0')}  ${c.name}`, tag: show ? show.title : '', now: i === now, run: () => tune(i) };
-  });
+  const entries = channels().map((c, i) => ({
+    label: `${String(i + 1).padStart(2, '0')}  ${c.name}`, now: i === now, run: () => tune(i),
+  }));
   if (!entries.length) {
     entries.push({ note: true, label: 'NO CHANNELS YET. BROWSE A SERVICE, START A LIVE CHANNEL PLAYING, THEN PRESS B AND ADD IT.' });
   }
   const extras = [];
-  if (channels().length) extras.push({ label: 'TV GUIDE', run: openGuide });
-  if (now >= 0) {
-    extras.push({ label: '⌕ FIND IN TV GUIDE', run: () => { toast('LOOKING…', 3); sendClues(now, 'find'); } });
+  const guidePage = onGuidePage();
+  if (guidePage) {
+    const back = channels()[S.current];
+    if (back) extras.push({ label: `◄ BACK TO ${back.name}`, pick: true, run: () => tune(S.current) });
+  } else if (now >= 0) {
     extras.push({ label: `✎ RENAME ${channels()[now].name}`, run: () => openRename(now) });
     extras.push({ label: `✕ REMOVE ${channels()[now].name}`, run: () => confirmRemove(now) });
   } else {
     extras.push({ label: '+ ADD THIS CHANNEL', run: addThis });
   }
+  if (!guidePage && S.guidePage) extras.push({ label: 'TV GUIDE', run: toggleGuide });
   const last = channels()[S.previous];
   if (last && S.previous !== now) extras.push({ label: `↺ LAST CHANNEL: ${last.name}`, run: () => tune(S.previous) });
-  if (channels().length > 1 || (channels().length && now < 0)) {
-    extras.push({ label: '⌕ SCAN ALL CHANNELS FOR THE GUIDE', run: () => { toast('STARTING THE SCAN…', 3); send({ t: 'scanAll' }); } });
-  }
   extras.push({ label: 'BROWSE A SERVICE…', run: () => openMenu(servicesMenu(), 'BROWSE') });
+  if (!guidePage && now < 0 && /^https?:$/.test(location.protocol)) {
+    extras.push({ label: 'USE THIS PAGE AS THE TV GUIDE', run: () => { send({ t: 'setGuide', url: location.href }); toast('THIS PAGE IS NOW THE TV GUIDE (X)'); } });
+  }
   if (history.length > 1) extras.push({ label: '◄ PREVIOUS PAGE', run: () => history.back() });
   if (tvOn) extras.push({ label: "THE SITE'S OWN SCREEN", run: useOwnScreen });
   extras[0].gap = true;
@@ -622,10 +502,9 @@ function confirmRemove(index) {
 
 function openMenu(entries, title) {
   if (!buildUi()) return;
-  askForGuide(false);
   menu.entries = entries;
   menu.title = title;
-  menu.at = Math.max(0, entries.findIndex((e) => e.now));
+  menu.at = Math.max(0, entries.findIndex((e) => e.now || e.pick));
   while (menu.entries[menu.at] && menu.entries[menu.at].note) menu.at++;
   menu.open = true;
   ui.title.textContent = title;
@@ -786,173 +665,6 @@ function renameKey(e) {
   return true;     // nothing reaches the site while renaming
 }
 
-// ---------------------------------------------------------------- TV guide
-
-const SLOT = 30 * 60000;          // the grid's columns: half hours
-const SPAN = 4 * SLOT;            // two hours across the screen
-const ROWS = 6;                   // channel rows on screen at once
-const g = { open: false, row: 0, show: 0, from: 0, top: 0 };
-
-const floorSlot = (ms) => Math.floor(ms / SLOT) * SLOT;
-
-/** A row's shows, or one "no guide" block so it can still be picked. */
-function laneFor(row) {
-  const shows = showsFor(row);
-  if (shows.length) return shows;
-  return [{ start: Date.now() - 12 * 3600e3, stop: Date.now() + 36 * 3600e3, title: guide ? 'NO GUIDE FOR THIS CHANNEL' : 'LOADING THE GUIDE…', none: true }];
-}
-
-function openGuide() {
-  if (!buildUi() || !channels().length) return;
-  askForGuide(false);
-  closeMenu();
-  hideBar();
-  g.open = true;
-  g.row = Math.max(0, current());
-  g.from = floorSlot(Date.now());
-  pickShowAt(Math.max(Date.now(), g.from));
-  ui.guide.classList.add('shown');
-  paintGuide();
-}
-
-function closeGuide() {
-  g.open = false;
-  if (ui.guide) ui.guide.classList.remove('shown');
-}
-
-/** On the current row, select the show running at (or next after) this time. */
-function pickShowAt(time) {
-  const lane = laneFor(g.row);
-  let at = lane.findIndex((p) => p.start <= time && time < p.stop);
-  if (at < 0) at = lane.findIndex((p) => p.start > time);
-  if (at < 0) at = lane.length - 1;
-  g.show = Math.max(0, at);
-}
-
-function selected() {
-  const lane = laneFor(g.row);
-  return lane[Math.min(g.show, lane.length - 1)];
-}
-
-function guideKey(e) {
-  const lane = laneFor(g.row);
-  switch (e.key) {
-    case 'ArrowUp':
-    case 'ArrowDown': {
-      const step = e.key === 'ArrowUp' ? -1 : 1;
-      const row = g.row + step;
-      if (row < 0 || row >= channels().length) return true;
-      const focus = Math.max(selected().start, g.from);
-      g.row = row;
-      pickShowAt(focus);
-      break;
-    }
-    case 'ArrowLeft': {
-      const earliest = floorSlot(Date.now()) - 2 * SLOT;    // an hour back at most
-      if (g.show > 0 && lane[g.show - 1].stop > earliest) {
-        g.show--;
-        if (selected().start < g.from) g.from = Math.max(earliest, floorSlot(selected().start));
-      } else if (g.from > earliest) {
-        g.from -= SLOT;
-      }
-      break;
-    }
-    case 'ArrowRight':
-      if (g.show < lane.length - 1) {
-        g.show++;
-        if (selected().start >= g.from + SPAN - SLOT / 2) g.from = floorSlot(selected().start);
-      } else if (g.from < Date.now() + 20 * 3600e3) {
-        g.from += SLOT;
-      }
-      break;
-    case 'Enter': case ' ': {
-      const show = selected();
-      if (show.none || (show.start <= Date.now() && Date.now() < show.stop)) {
-        closeGuide();
-        if (g.row !== current()) tune(g.row);
-        else showBar(g.row, 'LIVE');
-      } else {
-        toast(`${show.title} IS ON ${untilText(show.start)}`, 4);
-      }
-      return true;
-    }
-    case 'Escape': case 'Backspace': closeGuide(); return true;
-    default: return true;
-  }
-  paintGuide();
-  return true;
-}
-
-function paintGuide() {
-  const now = Date.now();
-  const show = selected();
-  const channel = channels()[g.row];
-  ui.gchan.textContent = `${String(g.row + 1).padStart(2, '0')}  ${channel.name}` +
-    (guide && guide.channels[g.row] && guide.channels[g.row].guide ? `   ·   GUIDE: ${guide.channels[g.row].guide.toUpperCase()}` : '');
-  ui.gtitle.textContent = show.title + (show.episode ? ` · ${show.episode}` : '');
-  ui.gwhen.textContent = show.none ? (guide && !guide.ok ? "THE GUIDE COULDN'T BE DOWNLOADED — SEE SETTINGS › EDIT TILES" : '')
-    : `${clock(show.start)} – ${clock(show.stop)}   ·   ` +
-      (show.start <= now && now < show.stop ? `ON NOW, ${Math.round((show.stop - now) / 60000)} MIN LEFT`
-        : show.stop <= now ? 'FINISHED' : `STARTS ${untilText(show.start)}`);
-  ui.gdesc.textContent = show.desc || '';
-
-  ui.gday.textContent = new Date(g.from).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase();
-  ui.gtimes.textContent = '';
-  for (let i = 0; i < SPAN / SLOT; i++) {
-    const label = document.createElement('span');
-    label.style.left = `${(100 * i * SLOT) / SPAN}%`;
-    label.textContent = clock(g.from + i * SLOT);
-    ui.gtimes.appendChild(label);
-  }
-
-  if (g.row < g.top) g.top = g.row;
-  if (g.row >= g.top + ROWS) g.top = g.row - ROWS + 1;
-  const playing = current();
-  ui.grows.textContent = '';
-  for (let row = g.top; row < Math.min(channels().length, g.top + ROWS); row++) {
-    const line = document.createElement('div');
-    line.className = 'grow';
-    const name = document.createElement('div');
-    name.className = 'gname' + (row === playing ? ' cur' : '');
-    name.textContent = `${String(row + 1).padStart(2, '0')} ${channels()[row].name}`;
-    line.appendChild(name);
-    const lane = document.createElement('div');
-    lane.className = 'glane';
-    laneFor(row).forEach((p, i) => {
-      if (p.stop <= g.from || p.start >= g.from + SPAN) return;
-      const left = Math.max(0, (p.start - g.from) / SPAN);
-      const right = Math.min(1, (p.stop - g.from) / SPAN);
-      const block = document.createElement('div');
-      block.className = 'gshow' + (p.start <= now && now < p.stop ? ' live' : '') + (row === g.row && i === g.show ? ' sel' : '');
-      block.style.left = `${left * 100}%`;
-      block.style.width = `calc(${(right - left) * 100}% - 2px)`;
-      block.textContent = p.title;
-      lane.appendChild(block);
-    });
-    if (now >= g.from && now < g.from + SPAN) {
-      const mark = document.createElement('div');
-      mark.className = 'gnow';
-      mark.style.left = `${(100 * (now - g.from)) / SPAN}%`;
-      lane.appendChild(mark);
-    }
-    line.appendChild(lane);
-    ui.grows.appendChild(line);
-  }
-}
-
-/** The launcher's answer to askForGuide. */
-window.__couchGuide = (data) => {
-  const focus = g.open ? Math.max(selected().start, g.from) : 0;
-  guide = data;
-  if (g.open) pickShowAt(focus);
-  log(`guide: ${data.ok ? data.channels.filter((c) => c.shows.length).length + ' of ' + data.channels.length + ' channels have shows' : 'none'}`);
-  if (g.open) paintGuide();
-  if (menu.open && menu.title === (S.tile || 'LIVE SURFER')) { const at = menu.at; openMenu(mainMenu(), menu.title); menu.at = at; paintMenu(); }
-  // Arrived just after the channel came on: show what's on now.
-  const now = current();
-  if (now >= 0 && Date.now() - announcedAt < 8000 && !menu.open && !g.open && !rename.open) showBar(now, 'LIVE');
-};
-
 // --------------------------------------------------------------- the keys
 
 const zap = { index: -1, timer: 0 };
@@ -981,7 +693,6 @@ function typing() {
 window.__couchKey = (e) => {
   const key = e.key;
   if (rename.open) return renameKey(e);
-  if (g.open) return guideKey(e);
   if (menu.open) {
     switch (key) {
       case 'ArrowUp': moveMenu(-1); return true;
@@ -992,9 +703,8 @@ window.__couchKey = (e) => {
     }
     return false;
   }
-  if (key === 'Escape' && S.scan) {
-    send({ t: 'scanStop' });
-    toast('STOPPING THE SCAN…', 3);
+  if ((key === 'g' || key === 'G') && !typing()) {
+    toggleGuide();
     return true;
   }
   if (key === 'Escape' && !typing()) {
@@ -1016,11 +726,10 @@ window.__couchKey = (e) => {
         if (v && v.paused) {
           v.play().catch(() => {});
           showBar(now, 'LIVE');
-        } else if (now >= 0 && barShowing() && barFor === now) {
-          openGuide();
+        } else if (now >= 0 && barShowing() && barFor === now && S.guidePage) {
+          toggleGuide();
         } else {
           showBar(now, 'LIVE');
-          askForGuide(false);
         }
         return true;
     }
@@ -1046,7 +755,6 @@ let lastHref = '';
 let pageAt = Date.now();
 let startTries = 0;
 let announced = false;
-let announcedAt = 0;
 
 function tick() {
   if (location.href !== lastHref) {
@@ -1074,13 +782,12 @@ function tick() {
     if (isPlaying(v)) {
       if (!announced) {
         announced = true;
-        announcedAt = Date.now();
         // What's on, for a few seconds, as the channel comes on.
-        if (!menu.open && !g.open && !rename.open) showBar(now, 'LIVE');
+        if (!menu.open && !rename.open) showBar(now, 'LIVE');
         log(`${channels()[now].name} is playing`);
       }
     } else if (starting) {
-      if (!announced && !menu.open && !g.open && !rename.open && barFor !== now) showBar(now, 'TUNING…', 0);
+      if (!announced && !menu.open && !rename.open && barFor !== now) showBar(now, 'TUNING…', 0);
       startChannel(v, now);
     } else if (startTries < 100) {
       startTries = 100;
@@ -1090,21 +797,6 @@ function tick() {
     }
   }
 
-  // Clues for the guide: once the page has had time to fill in (or gave up starting).
-  if (onChannel && cluesSentFor !== location.href + '#' + now) {
-    const why = wantsClues(now);
-    const settled = (isPlaying(v) && Date.now() - announcedAt > 6000) || Date.now() - pageAt > 20000;
-    if (why && settled) sendClues(now, why);
-  }
-  if (ui.banner) {
-    ui.banner.style.display = S.scan ? 'block' : 'none';
-    if (S.scan) ui.banner.textContent = `SCANNING FOR THE TV GUIDE · ${S.scan.step} OF ${S.scan.total} · B STOPS`;
-  }
-  if (S.notice && S.notice.at !== window.__couchNoticeShown && Date.now() - S.notice.at < 30000) {
-    window.__couchNoticeShown = S.notice.at;
-    toast(S.notice.text, 10);
-  }
-
   if (tvOn) {
     const button = stillWatching();
     if (button) {
@@ -1112,8 +804,6 @@ function tick() {
       button.click();
     }
   }
-  if (g.open && Date.now() % 30000 < 500) paintGuide();      // keep the "now" line moving
-  if (channels().length) askForGuide(false);
 }
 
 /** On a channel that isn't playing: give it a nudge, every 1.5 s or so. */
@@ -1135,8 +825,6 @@ function startChannel(v, index) {
 window.__couchUpdate = (settings) => {
   S = settings;
   if (menu.open && menu.title === (S.tile || 'LIVE SURFER')) openMenu(mainMenu(), menu.title);
-  // A renamed or new channel can match a different guide channel.
-  askForGuide(true);
 };
 
 setInterval(() => {
