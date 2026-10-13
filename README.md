@@ -35,7 +35,8 @@ another app the controller is left alone, except:
 |---|---|
 | `Back` + `Start` (View + Menu) | Back to the tiles, from anywhere |
 
-In a Live Surfer tile, X also opens the TV guide page (and X again goes back).
+In a Live Surfer tile, X also opens the TV guide page (and X again goes back),
+and Y opens its options.
 
 The combo and hold time are `ControllerHomeCombo` and `ControllerHoldMs` in
 `config.json`. PlayStation and Switch pads need Steam Input or DS4Windows to
@@ -85,26 +86,29 @@ changes what's on screen and what the buttons do.
    own sign-ins. Some sites sign in through a pop-up, so turn POP-UP WINDOWS
    (under the tile's ADVANCED) to ALLOWED while you do this, then back to
    BLOCKED.
-3. Find a live channel and start it playing. Press **B** and choose
-   **+ ADD THIS CHANNEL**. Do that for each channel you want. B ›
+3. Find a live channel and start it playing. Press **Y** and choose
+   **+ ADD THIS CHANNEL**. Do that for each channel you want. Y ›
    BROWSE A SERVICE… gets you to the other sites.
 4. Back in Edit tiles you can rename, reorder and remove channels, or add
    one by pasting its address.
 
 **Using it**
 
-- **B:** the menu, from anywhere. It has your channels, ADD THIS CHANNEL or
-  RENAME and REMOVE for the one you're on, TV GUIDE, LAST CHANNEL, BROWSE A
-  SERVICE…, PREVIOUS PAGE, and THE SITE'S OWN SCREEN, which shows the normal
-  site until you leave that page.
+- **B:** your channel list, from anywhere. A watches the one you pick.
+- **Y:** options for the page you're on: ADD THIS CHANNEL, or RENAME and
+  REMOVE on a channel; TV GUIDE; LAST CHANNEL; BROWSE A SERVICE…; USE THIS
+  PAGE AS THE TV GUIDE; PREVIOUS PAGE; and THE SITE'S OWN SCREEN, which shows
+  the normal site until you leave that page. Y in the channel list jumps to
+  options, and Y again closes them.
 - **On a channel:** ◄► change channel (a few quick presses skip channels),
   ▲▼ change the PC's volume, A shows the channel bar.
 - **TV guide:** **X** opens the TV guide page, Freeview's by default, and X
-  again goes back to the channel. A twice, G on a keyboard, or B › TV GUIDE
-  do the same. X works with an Xbox-style controller. If the Retroid's X
-  doesn't, set it in the Retroid app to send G. To use a different guide
-  page, open it in the tile and choose B › USE THIS PAGE AS THE TV GUIDE, or
-  set it under the tile's ADVANCED › TV GUIDE PAGE.
+  again goes back to the channel. A twice or Y › TV GUIDE do the same. To use
+  a different guide page, open it in the tile and choose Y › USE THIS PAGE AS
+  THE TV GUIDE, or set it under the tile's ADVANCED › TV GUIDE PAGE.
+- **Retroid buttons:** the Retroid sends keys, so set its X and Y in the
+  Retroid app to send the **X** (or G) and **Y** keys. An Xbox-style
+  controller's X and Y work as they are.
 - **On a show or film:** A plays/pauses, ◄► jump 10 seconds, ▲▼ volume.
 - **Anywhere else** the keys belong to the site, so you can browse it with
   the D-pad and A.
@@ -112,7 +116,7 @@ changes what's on screen and what the buttons do.
   is hidden. If a channel doesn't start by itself, Live Surfer presses its
   Play button. If it still isn't playing after 15 seconds, it shows you the
   page so you can start it.
-- **Renaming:** B › RENAME brings up an on-screen keyboard. Use the D-pad
+- **Renaming:** Y › RENAME brings up an on-screen keyboard. Use the D-pad
   and A, or type on the phone remote's keyboard, then DONE.
 - The tile opens on the last channel you watched. Changing channel within a
   site is quick. Changing to another site loads that site, so allow a few

@@ -458,13 +458,13 @@ sealed class AppManager
     }
 
     /// <summary>
-    /// The controller's X while a Live Surfer is in front: its TV guide page,
-    /// or back to the channel from it. The page does the deciding.
+    /// Runs some script in a Live Surfer's pages: a controller button pressed
+    /// while it's in front (X: the TV guide, Y: options). The page does the deciding.
     /// </summary>
-    public void ToggleSurferGuide(Tile tile)
+    public void SurferScript(Tile tile, string script)
     {
         if (bridges.TryGetValue(tile.Id, out var bridge) && !bridge.Finished)
-            _ = bridge.EvaluateEverywhereAsync("window.__couchToggleGuide && window.__couchToggleGuide()");
+            _ = bridge.EvaluateEverywhereAsync(script);
     }
 
     async Task TuneAsync(TileRuntime r, SiteBridge bridge, string session, int index)

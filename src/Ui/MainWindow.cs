@@ -62,11 +62,8 @@ sealed class MainWindow : Window
         Apps = new AppManager(Config);
         pad = new Gamepad(() => hwnd != IntPtr.Zero && Native.GetForegroundWindow() == hwnd,
             nav => HandleNav(nav), ShowHome);
-        pad.XPressed += () =>
-        {
-            if (Apps.ByWindow(Native.GetForegroundWindow()) is { Tile.Kind: TileKind.LiveSurfer } surfer)
-                Apps.ToggleSurferGuide(surfer.Tile);
-        };
+        pad.XPressed += () => SurferButton("window.__couchToggleGuide && window.__couchToggleGuide()");
+        pad.YPressed += () => SurferButton("window.__couchOptions && window.__couchOptions()");
         BuildChrome();
         Content = new Viewbox { Stretch = Stretch.Uniform, Child = stage };
 
@@ -448,6 +445,13 @@ sealed class MainWindow : Window
     }
 
     /// <summary>Starts or stops the controller to match the settings.</summary>
+    /// <summary>A controller button for the Live Surfer in front, if one is.</summary>
+    void SurferButton(string script)
+    {
+        if (Apps.ByWindow(Native.GetForegroundWindow()) is { Tile.Kind: TileKind.LiveSurfer } surfer)
+            Apps.SurferScript(surfer.Tile, script);
+    }
+
     public void ApplyController()
     {
         var problem = pad.Configure(Config.Controller, Config.ControllerHomeCombo, Config.ControllerHoldMs);
