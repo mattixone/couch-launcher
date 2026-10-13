@@ -13,23 +13,42 @@ sealed class SettingsScreen : Screen
     int selected;
     string note = "";
 
-    public SettingsScreen(MainWindow host) : base(host)
+    /// <summary>The ADVANCED page, or the main one.</summary>
+    readonly bool advanced;
+    const int AdvancedRow = 3;
+
+    public SettingsScreen(MainWindow host, bool advanced = false, int select = 0) : base(host)
     {
-        rows = new List<Row>
-        {
-            new(() => $"THEME   ◄ {Host.Palette.Label} ►",
-                () => Host.SetTheme(Host.Palette.Next),
-                step => Host.SetTheme(step > 0 ? Host.Palette.Next : Host.Palette.Previous)),
-            new(() => $"START WITH WINDOWS:  {(Host.Config.StartAtLogin ? "ON" : "OFF")}", ToggleStartup),
-            new(() => $"CONTROLLER:  {(Host.Config.Controller ? "ON" : "OFF")}", ToggleController),
-            new(() => $"PHONE REMOTE   ◄ {(Host.Config.PhoneRemote ? "ON" : "OFF")} ►",
-                () => Host.ShowModal(new PhoneRemoteModal(Host)),
-                _ => TogglePhoneRemote()),
-            new(() => "EDIT TILES", () => Host.ShowScreen(new EditorScreen(Host))),
-            new(() => "CHECK FOR UPDATES", CheckForUpdates),
-            new(() => "DRM CHECK", CheckDrm),
-            new(() => "EXIT THE LAUNCHER", ConfirmExit),
-        };
+        this.advanced = advanced;
+        selected = select;
+        rows = advanced
+            ? new List<Row>
+            {
+                new(() => $"START WITH WINDOWS:  {(Host.Config.StartAtLogin ? "ON" : "OFF")}", ToggleStartup),
+                new(() => $"CONTROLLER:  {(Host.Config.Controller ? "ON" : "OFF")}", ToggleController),
+                new(() => "DRM CHECK", CheckDrm),
+                new(() => "◄ BACK", Back),
+            }
+            : new List<Row>
+            {
+                new(() => $"THEME   ◄ {Host.Palette.Label} ►",
+                    () => Host.SetTheme(Host.Palette.Next),
+                    step => Host.SetTheme(step > 0 ? Host.Palette.Next : Host.Palette.Previous)),
+                new(() => $"PHONE REMOTE   ◄ {(Host.Config.PhoneRemote ? "ON" : "OFF")} ►",
+                    () => Host.ShowModal(new PhoneRemoteModal(Host)),
+                    _ => TogglePhoneRemote()),
+                new(() => "EDIT TILES", () => Host.ShowScreen(new EditorScreen(Host))),
+                new(() => "ADVANCED  ►", () => Host.ShowScreen(new SettingsScreen(Host, advanced: true))),
+                new(() => "CHECK FOR UPDATES", CheckForUpdates),
+                new(() => "EXIT THE LAUNCHER", ConfirmExit),
+            };
+    }
+
+    /// <summary>B: from ADVANCED back to the main settings (on ADVANCED), from there home.</summary>
+    void Back()
+    {
+        if (advanced) Host.ShowScreen(new SettingsScreen(Host, select: AdvancedRow));
+        else Host.ShowHome();
     }
 
     public override string Hint => "▲▼ MOVE     ◄► CHANGE     A SELECT     B BACK";
@@ -42,7 +61,7 @@ sealed class SettingsScreen : Screen
         layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var list = new StackPanel();
-        list.Children.Add(Heading("SETTINGS"));
+        list.Children.Add(Heading(advanced ? "SETTINGS  ›  ADVANCED" : "SETTINGS"));
         for (int i = 0; i < rows.Count; i++)
         {
             int index = i;
@@ -121,7 +140,7 @@ sealed class SettingsScreen : Screen
             case Nav.Left: rows[selected].Adjust?.Invoke(-1); break;
             case Nav.Right: rows[selected].Adjust?.Invoke(1); break;
             case Nav.Select: rows[selected].Select(); break;
-            case Nav.Back: Host.ShowHome(); break;
+            case Nav.Back: Back(); break;
         }
     }
 

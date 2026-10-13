@@ -14,6 +14,8 @@ sealed class EditorScreen : Screen
     StackPanel list = new();
     Border form = new();
     int selected;
+    /// <summary>The ADVANCED section is open.</summary>
+    bool showAdvanced;
 
     public EditorScreen(MainWindow host) : base(host) { }
 
@@ -137,9 +139,6 @@ sealed class EditorScreen : Screen
                 fields.Children.Add(Field("BROWSER", Chips(Browsers.All.Select(b =>
                     (b.Label + (Browsers.Installed(b) ? "" : " (NOT INSTALLED)"), tile.Browser == b.Id,
                      (Action)(() => { tile.Browser = b.Id; RebuildForm(); }))).ToArray())));
-                fields.Children.Add(Field("TV MODE", Chips(
-                    (tile.TvMode ? "ON" : "OFF", tile.TvMode, () => { tile.TvMode = !tile.TvMode; RebuildForm(); })),
-                    "Pretends to be a smart TV. Needed for youtube.com/tv, which otherwise redirects."));
                 break;
 
             case TileKind.App:
@@ -166,9 +165,30 @@ sealed class EditorScreen : Screen
                 break;
 
             case TileKind.LiveSurfer:
-                LoadGuide(tile);
                 AddSurferFields(fields, tile);
                 break;
+        }
+
+        // The settings most tiles never need, folded away.
+        fields.Children.Add(Field("ADVANCED", Chips(
+            (showAdvanced ? "▴ HIDE" : "▾ SHOW", showAdvanced, () => { showAdvanced = !showAdvanced; RebuildForm(); })),
+            showAdvanced ? null : "TV mode, the A button, pop-up windows, the icon" +
+                                  (tile.Kind == TileKind.LiveSurfer ? ", the TV guide page." : ".")));
+        if (!showAdvanced) return;
+
+        if (tile.Kind == TileKind.Web)
+            fields.Children.Add(Field("TV MODE", Chips(
+                (tile.TvMode ? "ON" : "OFF", tile.TvMode, () => { tile.TvMode = !tile.TvMode; RebuildForm(); })),
+                "Pretends to be a smart TV. Needed for youtube.com/tv, which otherwise redirects."));
+
+        if (tile.Kind == TileKind.LiveSurfer)
+        {
+            var guidePage = new StackPanel();
+            guidePage.Children.Add(Crt.Input(tile.GuidePage, value => tile.GuidePage = value.Trim()));
+            guidePage.Children.Add(Chips(("FREEVIEW", tile.GuidePage == LiveSurfer.DefaultGuidePage,
+                () => { tile.GuidePage = LiveSurfer.DefaultGuidePage; RebuildForm(); })));
+            fields.Children.Add(Field("TV GUIDE PAGE", guidePage,
+                "What X (or A twice) opens while watching. Or open the page you want in the tile and choose B › USE THIS PAGE AS THE TV GUIDE."));
         }
 
         fields.Children.Add(Field("A BUTTON", Chips(
@@ -190,7 +210,7 @@ sealed class EditorScreen : Screen
     void AddSurferFields(StackPanel fields, Tile tile)
     {
         fields.Children.Add(Field("", Crt.Text(
-            "Live channels from iview, SBS, 7plus, 9Now and 10 in one window. ▲▼ change channel, B opens the menu.", 22, 0.7)));
+            "Live channels from iview, SBS, 7plus, 9Now and 10 in one window. ◄► change channel, ▲▼ volume, X the TV guide, B the menu.", 22, 0.7)));
         fields.Children.Add(Field("BROWSER", Chips(Browsers.All.Select(b =>
             (b.Label + (Browsers.Installed(b) ? "" : " (NOT INSTALLED)"), tile.Browser == b.Id,
              (Action)(() => { tile.Browser = b.Id; RebuildForm(); }))).ToArray()),
@@ -201,25 +221,6 @@ sealed class EditorScreen : Screen
         startPage.Children.Add(Chips(LiveSurfer.Services.Select(s =>
             (s.Name, tile.Url == s.Url, (Action)(() => { tile.Url = s.Url; RebuildForm(); }))).ToArray()));
         fields.Children.Add(Field("START PAGE", startPage, "Where it opens until it has channels. After that it opens on the last channel you watched."));
-
-        var guideField = new StackPanel();
-        guideField.Children.Add(Crt.Input(tile.GuideUrl, value => { tile.GuideUrl = value.Trim(); guideNote = ""; }));
-        foreach (var source in TvGuide.Sources)
-        {
-            var cities = Chips(TvGuide.Cities.Select(city =>
-            {
-                var url = string.Format(source.Pattern, city);
-                return ($"{source.Label} {city.ToUpperInvariant()}", tile.GuideUrl == url,
-                        (Action)(() => { tile.GuideUrl = url; guideNote = ""; RebuildForm(); }));
-            }).ToArray());
-            guideField.Children.Add(cities);
-        }
-        guideField.Children.Add(Chips(
-            ("NO GUIDE", tile.GuideUrl.Length == 0, () => { tile.GuideUrl = ""; RebuildForm(); }),
-            ("CHECK IT", false, () => CheckGuide(tile))));
-        fields.Children.Add(Field("TV GUIDE", guideField,
-            guideNote.Length > 0 ? guideNote :
-            "What's on, for the channel bar and the guide (A twice while watching). Pick your city; if one source stops updating, try the other."));
 
         var list = new StackPanel();
         if (tile.Channels.Count == 0)
@@ -241,10 +242,7 @@ sealed class EditorScreen : Screen
             address.FontSize = 18;
             address.Margin = new Thickness(52, 6, 0, 0);
             row.Children.Add(address);
-            var guideName = channel.GuideId == TvGuide.NoGuide ? "NONE"
-                : guide?.Match(channel.Name, channel.GuideId)?.Name.ToUpperInvariant() ?? (guide == null ? "…" : "NOT FOUND");
             var buttons = Chips(
-                ($"GUIDE: {guideName}{(channel.GuideId.Length == 0 ? " (AUTO)" : "")}", false, () => PickGuideChannel(tile, channel)),
                 ("▲", false, () => MoveChannel(tile, index, -1)),
                 ("▼", false, () => MoveChannel(tile, index, 1)),
                 ("REMOVE", false, () => { tile.Channels.RemoveAt(index); RebuildForm(); }));
@@ -259,55 +257,6 @@ sealed class EditorScreen : Screen
         })));
         fields.Children.Add(Field("CHANNELS", list,
             "Easiest from the tile itself: start a live channel playing, press B, choose + ADD THIS CHANNEL. Rename and reorder them here."));
-    }
-
-    /// <summary>The guide for the tile being edited, once it's loaded (for the channels' GUIDE buttons).</summary>
-    TvGuide? guide;
-    string guideFor = "";
-    string guideNote = "";
-
-    async void LoadGuide(Tile tile)
-    {
-        if (guideFor == tile.GuideUrl) return;
-        guideFor = tile.GuideUrl;
-        guide = null;
-        var loaded = await TvGuide.GetAsync(tile.GuideUrl);
-        if (guideFor != tile.GuideUrl) return;
-        guide = loaded;
-        if (Current == tile) RebuildForm();
-    }
-
-    async void CheckGuide(Tile tile)
-    {
-        guideNote = "CHECKING…";
-        RebuildForm();
-        var loaded = await TvGuide.GetAsync(tile.GuideUrl);
-        guideFor = tile.GuideUrl;
-        guide = loaded;
-        guideNote = loaded == null
-            ? "COULDN'T GET THAT GUIDE — SEE THE LOG. TRY THE OTHER SOURCE."
-            : $"OK: {loaded.Channels.Count} CHANNELS. " +
-              $"{tile.Channels.Count(c => loaded.Match(c.Name, c.GuideId) != null)} OF YOUR {tile.Channels.Count} MATCHED.";
-        if (Current == tile) RebuildForm();
-    }
-
-    async void PickGuideChannel(Tile tile, LiveChannel channel)
-    {
-        var loaded = guide ?? await TvGuide.GetAsync(tile.GuideUrl);
-        if (loaded == null)
-        {
-            guideNote = "NO GUIDE TO PICK FROM — CHECK THE TV GUIDE SETTING.";
-            RebuildForm();
-            return;
-        }
-        var options = loaded.Channels.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        var labels = new List<string> { "AUTOMATIC (BY NAME)", "NO GUIDE FOR THIS CHANNEL" };
-        labels.AddRange(options.Select(c => c.Name.ToUpperInvariant()));
-        Host.ShowModal(new PickerModal(Host, $"GUIDE FOR {channel.Name.ToUpperInvariant()}", labels, pick =>
-        {
-            channel.GuideId = pick switch { 0 => "", 1 => TvGuide.NoGuide, _ => options[pick - 2].Id };
-            RebuildForm();
-        }));
     }
 
     void MoveChannel(Tile tile, int index, int step)
