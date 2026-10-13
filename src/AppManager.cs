@@ -27,6 +27,22 @@ sealed class TileRuntime
     public int PreviousChannel { get; set; } = -1;
     /// <summary>When the channel last changed, Unix milliseconds.</summary>
     public long TunedAtMs { get; set; }
+    /// <summary>SCAN ALL CHANNELS, while it's going.</summary>
+    public SurferScan? Scan { get; set; }
+    /// <summary>A message for the next page to show (the scan's result), and when it was set.</summary>
+    public (string Text, long AtMs)? Notice { get; set; }
+}
+
+/// <summary>Live Surfer visiting each channel in turn to find it in the TV guide.</summary>
+sealed class SurferScan
+{
+    public Queue<int> Waiting { get; } = new();
+    public int Total { get; init; }
+    public int Index { get; set; } = -1;
+    public int ReturnTo { get; init; }
+    public DateTime StepStarted { get; set; }
+    public string Session { get; set; } = "";
+    public List<string> Found { get; } = new();
 }
 
 /// <summary>
@@ -162,6 +178,21 @@ sealed class AppManager
         }
 
         if (now < steamWindowCloseUntil) CloseSteamDesktopWindows(windows, now);
+
+        // A scanned channel that never sent its clues (it didn't load, say): move on.
+        foreach (var r in byId.Values)
+        {
+            if (r.Scan is not { } scan || (now - scan.StepStarted).TotalSeconds < 40) continue;
+            if (!bridges.TryGetValue(r.Tile.Id, out var bridge) || bridge.Finished)
+            {
+                r.Scan = null;
+                continue;
+            }
+            Log.Write($"{r.Tile.Name}: scan gave up on channel {scan.Index + 1}");
+            if (scan.Index >= 0 && scan.Index < r.Tile.Channels.Count) scan.Found.Add($"{r.Tile.Channels[scan.Index].Name} ?");
+            scan.StepStarted = now;
+            _ = ScanNextAsync(r, bridge);
+        }
 
         if (needDiscovery && (now - lastDiscovery).TotalSeconds > 5) _ = DiscoverAsync();
     }
@@ -354,7 +385,9 @@ sealed class AppManager
     }
 
     string? SurferScript(TileRuntime r) =>
-        LiveSurfer.BuildScript(r.Tile, Theme.Get(config.Theme), r.Channel, r.PreviousChannel, r.TunedAtMs);
+        LiveSurfer.BuildScript(r.Tile, Theme.Get(config.Theme), r.Channel, r.PreviousChannel, r.TunedAtMs,
+            r.Scan is { } scan ? new { index = scan.Index, step = scan.Total - scan.Waiting.Count, total = scan.Total } : null,
+            r.Notice is { } notice ? new { text = notice.Text, at = notice.AtMs } : null);
 
     /// <summary>Gives a Live Surfer tile's pages its latest channels and settings.</summary>
     async Task PushSurferAsync(TileRuntime r)
@@ -388,17 +421,64 @@ sealed class AppManager
                 {
                     int index = Number("index");
                     if (index < 0 || index >= tile.Channels.Count) return;
-                    if (r.Channel >= 0 && r.Channel != index) r.PreviousChannel = r.Channel;
-                    r.Channel = index;
-                    r.TunedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    tile.LastChannel = index;
-                    config.Save();
-                    Log.Write($"{tile.Name}: channel {index + 1}, {tile.Channels[index].Name}");
-                    // New pages need to know where they are before they load.
-                    await PushSurferAsync(r);
-                    await bridge.NavigateAsync(session, tile.Channels[index].Url);
+                    await TuneAsync(r, bridge, session, index);
                     break;
                 }
+                case "clues":
+                {
+                    int index = Number("index");
+                    if (index < 0 || index >= tile.Channels.Count) return;
+                    var labels = m.TryGetProperty("labels", out var list) && list.ValueKind == System.Text.Json.JsonValueKind.Array
+                        ? list.EnumerateArray().Where(e => e.ValueKind == System.Text.Json.JsonValueKind.String).Select(e => e.GetString()!).ToArray()
+                        : Array.Empty<string>();
+                    await IdentifyAsync(r, bridge, session, index, Text("why"),
+                        new TvGuide.Clues(Text("url"), Text("title"), labels, Text("text")));
+                    break;
+                }
+                case "match":
+                {
+                    int index = Number("index");
+                    if (index < 0 || index >= tile.Channels.Count) return;
+                    var id = Text("id");
+                    var guide = await TvGuide.GetAsync(tile.GuideUrl);
+                    var chosen = guide?.Channels.FirstOrDefault(c => c.Id == id);
+                    if (chosen != null) UseGuideChannel(tile, index, chosen);
+                    else tile.Channels[index].GuideId = id == TvGuide.NoGuide ? TvGuide.NoGuide : "";
+                    Log.Write($"{tile.Name}: channel {index + 1} guide set to {chosen?.Name ?? (id.Length == 0 ? "automatic" : id)}");
+                    config.Save();
+                    await PushSurferAsync(r);
+                    break;
+                }
+                case "scanAll":
+                {
+                    if (r.Scan != null || tile.Channels.Count == 0) return;
+                    var guide = await TvGuide.GetAsync(tile.GuideUrl);
+                    if (guide == null)
+                    {
+                        r.Notice = ("NO TV GUIDE TO SCAN AGAINST — CHECK SETTINGS › EDIT TILES › TV GUIDE", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                        await PushSurferAsync(r);
+                        return;
+                    }
+                    // The channels the guide doesn't know yet; all of them if it knows every one.
+                    var unknown = Enumerable.Range(0, tile.Channels.Count)
+                        .Where(i => tile.Channels[i].GuideId != TvGuide.NoGuide && guide.Match(tile.Channels[i].Name, tile.Channels[i].GuideId) == null)
+                        .ToList();
+                    if (unknown.Count == 0) unknown = Enumerable.Range(0, tile.Channels.Count).Where(i => tile.Channels[i].GuideId != TvGuide.NoGuide).ToList();
+                    var scan = new SurferScan { Total = unknown.Count, ReturnTo = Math.Max(0, r.Channel), Session = session };
+                    foreach (var i in unknown) scan.Waiting.Enqueue(i);
+                    r.Scan = scan;
+                    Log.Write($"{tile.Name}: scanning {unknown.Count} channel(s) for the TV guide");
+                    await ScanNextAsync(r, bridge);
+                    break;
+                }
+                case "scanStop":
+                    if (r.Scan != null)
+                    {
+                        Log.Write($"{tile.Name}: scan stopped");
+                        r.Scan.Waiting.Clear();
+                        await ScanNextAsync(r, bridge);
+                    }
+                    break;
                 case "add":
                 {
                     var url = Text("url");
@@ -460,6 +540,95 @@ sealed class AppManager
 
         // After channel <removed> is taken out: the same channel's new number.
         static int Shift(int channel, int removed) => channel == removed ? -1 : channel > removed ? channel - 1 : channel;
+    }
+
+    async Task TuneAsync(TileRuntime r, SiteBridge bridge, string session, int index)
+    {
+        var tile = r.Tile;
+        if (r.Channel >= 0 && r.Channel != index) r.PreviousChannel = r.Channel;
+        r.Channel = index;
+        r.TunedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        tile.LastChannel = index;
+        config.Save();
+        Log.Write($"{tile.Name}: channel {index + 1}, {tile.Channels[index].Name}");
+        // New pages need to know where they are before they load.
+        await PushSurferAsync(r);
+        await bridge.NavigateAsync(session, tile.Channels[index].Url);
+    }
+
+    /// <summary>
+    /// A page's clues about which channel it is: find it in the guide. Used
+    /// straight away when it's clear-cut and wasn't asked about (a channel the
+    /// guide didn't know, or a scan); asked about, the page gets the best
+    /// few to choose from.
+    /// </summary>
+    async Task IdentifyAsync(TileRuntime r, SiteBridge bridge, string session, int index, string why, TvGuide.Clues clues)
+    {
+        var tile = r.Tile;
+        var channel = tile.Channels[index];
+        var guide = await TvGuide.GetAsync(tile.GuideUrl);
+        var ranked = guide?.Identify(clues) ?? new();
+        bool sure = TvGuide.Confident(ranked);
+        Log.Write($"{tile.Name}: identify {channel.Name} ({why}): " +
+                  (ranked.Count == 0 ? "no clues matched" : string.Join(", ", ranked.Take(3).Select(c => $"{c.Channel.Name} {c.Score}"))) +
+                  (sure ? " — sure" : ""));
+
+        string? matched = null;
+        bool scanning = why == "scan" && r.Scan?.Index == index;
+        if (sure && (scanning || (why == "auto" && channel.GuideId.Length == 0)))
+        {
+            UseGuideChannel(tile, index, ranked[0].Channel);
+            matched = ranked[0].Channel.Name;
+            config.Save();
+        }
+        if (scanning)
+        {
+            r.Scan!.Found.Add(matched != null ? $"{tile.Channels[index].Name} ✓" : $"{channel.Name} ?");
+            await ScanNextAsync(r, bridge);
+            return;
+        }
+        var reply = new
+        {
+            index,
+            why,
+            noGuide = guide == null,
+            matched,
+            candidates = ranked.Take(6).Select(c => new { id = c.Channel.Id, name = c.Channel.Name, now = c.Now }),
+        };
+        await bridge.EvaluateAsync(session, $"window.__couchScan && window.__couchScan({System.Text.Json.JsonSerializer.Serialize(reply)})");
+        if (matched != null) await PushSurferAsync(r);
+    }
+
+    /// <summary>
+    /// Ties a channel to a guide channel, and gives it the guide's name if
+    /// its own said nothing ("WWW.SBS.COM.AU" → "SBS VICELAND").
+    /// </summary>
+    static void UseGuideChannel(Tile tile, int index, TvGuide.Channel guideChannel)
+    {
+        var channel = tile.Channels[index];
+        channel.GuideId = guideChannel.Id;
+        if (LiveSurfer.IsPlaceholderName(channel.Name)) channel.Name = TvGuide.StripPlace(guideChannel.Name).ToUpperInvariant();
+    }
+
+    /// <summary>The scan's next channel, or back to where it started once they're all done.</summary>
+    async Task ScanNextAsync(TileRuntime r, SiteBridge bridge)
+    {
+        if (r.Scan is not { } scan) return;
+        if (scan.Waiting.Count > 0)
+        {
+            scan.Index = scan.Waiting.Dequeue();
+            scan.StepStarted = DateTime.UtcNow;
+            await TuneAsync(r, bridge, scan.Session, scan.Index);
+            return;
+        }
+        r.Scan = null;
+        int matched = scan.Found.Count(f => f.EndsWith('✓'));
+        var summary = $"SCAN DONE: {matched} OF {scan.Total} FOUND IN THE GUIDE" +
+                      (matched < scan.Total ? " — FOR THE REST: B › FIND IN TV GUIDE" : "");
+        Log.Write($"{r.Tile.Name}: {summary} ({string.Join(", ", scan.Found)})");
+        r.Notice = (summary, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        if (r.Tile.Channels.Count > 0)
+            await TuneAsync(r, bridge, scan.Session, Math.Min(scan.ReturnTo, r.Tile.Channels.Count - 1));
     }
 
     /// <summary>

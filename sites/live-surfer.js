@@ -14,7 +14,10 @@
 //    play/pause, ◄► 10 s back/forward, ▲▼ volume. Anywhere else the keys
 //    belong to the site, so you can browse it.
 //  - What's on comes from the TV guide the launcher downloads; it sends this
-//    tile's channels' shows when asked (__couchGuide).
+//    tile's channels' shows when asked (__couchGuide). To find a channel in
+//    the guide, the page sends the launcher clues — its address, title,
+//    labels and text, which nearly always include the show on now — and the
+//    launcher picks the guide channel they fit (__couchScan).
 //
 // The launcher re-runs this script whenever the list or the channel changes;
 // the copy already running takes the new settings (see the end).
@@ -152,6 +155,7 @@ function cleanTitle() {
 }
 
 function addThis() {
+  if (!/^https?:$/.test(location.protocol)) return toast("THIS PAGE DIDN'T LOAD — NOTHING TO ADD");
   const at = channels().findIndex((c) => isPage(c.url));
   if (at >= 0) {
     toast(`ALREADY CHANNEL ${String(at + 1).padStart(2, '0')}`);
@@ -291,6 +295,71 @@ function untilText(ms) {
   return `AT ${clock(ms)}`;
 }
 
+// ------------------------------------------------- finding it in the guide
+
+/** What the page says about itself, for the launcher to find it in the guide. */
+function collectClues() {
+  const labels = new Set();
+  const add = (value) => {
+    const text = (value || '').replace(/\s+/g, ' ').trim();
+    if (text.length > 1 && text.length < 160 && labels.size < 400) labels.add(text);
+  };
+  for (const m of document.querySelectorAll('meta[property^="og:"], meta[name="description"], meta[name="title"], meta[name^="twitter:"]')) add(m.content);
+  for (const el of document.querySelectorAll('h1, h2, h3, [aria-label], img[alt], [title]')) {
+    add(el.getAttribute('aria-label'));
+    add(el.getAttribute('alt'));
+    add(el.getAttribute('title'));
+    if (/^H[123]$/.test(el.tagName)) add(el.textContent);
+  }
+  // Structured data many sites carry for search engines: names of shows and channels.
+  for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+    for (const m of (s.textContent || '').matchAll(/"(?:name|alternateName|headline)"\s*:\s*"([^"]{2,120})"/g)) add(m[1]);
+  }
+  const parts = [];
+  let size = 0;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(node.parentNode.nodeName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  while (walker.nextNode() && size < 60000) {
+    const text = walker.currentNode.nodeValue.replace(/\s+/g, ' ').trim();
+    if (text) { parts.push(text); size += text.length + 3; }
+  }
+  return { url: location.href, title: document.title || '', labels: [...labels], text: parts.join(' | ') };
+}
+
+let cluesSentFor = '';
+function sendClues(index, why) {
+  cluesSentFor = location.href + '#' + index;
+  log(`clues for ${channels()[index].name} (${why})`);
+  send({ t: 'clues', index, why, ...collectClues() });
+}
+
+/** The launcher's answer: which guide channel the page looks like. */
+window.__couchScan = (reply) => {
+  const channel = channels()[reply.index];
+  if (!channel) return;
+  if (reply.matched) toast(`TV GUIDE: ${channel.name} IS ${reply.matched}`, 5);
+  if (reply.why !== 'find') return;
+  if (ui.toast) ui.toast.classList.remove('on');      // "LOOKING…"
+  if (reply.noGuide) return toast("NO TV GUIDE YET — CHECK SETTINGS › EDIT TILES › TV GUIDE", 8);
+  const pick = (id) => () => send({ t: 'match', index: reply.index, id });
+  const entries = reply.candidates.map((c) => ({
+    label: c.name, tag: c.now ? `NOW: ${c.now}` : '', run: pick(c.id),
+  }));
+  if (!entries.length) entries.push({ note: true, label: "NOTHING ON THIS PAGE MATCHED THE GUIDE. PICK IT IN SETTINGS › EDIT TILES › THE CHANNEL'S GUIDE BUTTON." });
+  entries.push({ label: 'AUTOMATIC (BY NAME)', extra: true, gap: true, run: pick('') });
+  entries.push({ label: 'NO GUIDE FOR THIS CHANNEL', extra: true, run: pick('none') });
+  openMenu(entries, `WHICH IS ${channel.name}?`);
+};
+
+/** Should this channel's page send clues by itself? A scan, or a channel the guide can't place. */
+function wantsClues(index) {
+  if (S.scan && S.scan.index === index) return 'scan';
+  const channel = channels()[index];
+  if (guide && guide.ok && channel && !channel.guideChoice && guide.channels[index] && !guide.channels[index].guide) return 'auto';
+  return '';
+}
+
 // ---------------------------------------------------------------- on screen
 
 const ui = {};
@@ -352,6 +421,8 @@ function buildUi() {
         .item .tag { opacity: .6; font-size: 2.2vh; font-weight: normal; }
         .hint { font-size: 2.2vh; opacity: .55; margin-top: 2vh; }
 
+        .banner { position: absolute; top: 6vh; left: 50%; transform: translateX(-50%); padding: 1.6vh 2vw; ${panel}
+                  font-size: 2.8vh; font-weight: bold; display: none; white-space: nowrap; }
         .toast { position: absolute; top: 16vh; left: 50%; transform: translateX(-50%); max-width: 60vw; padding: 1.6vh 2vw; ${panel}
                  font-size: 2.8vh; opacity: 0; transition: opacity .2s; text-transform: uppercase; }
 
@@ -411,12 +482,13 @@ function buildUi() {
             <div class="ghint">▲▼ CHANNEL &nbsp; ◄► TIME &nbsp; A WATCH &nbsp; B CLOSE</div>
           </div>
         </div>
+        <div class="banner"></div>
         <div class="toast"></div>
       </div>`;
     ui.host = host;
     for (const name of ['bar', 'num', 'name', 'now', 'prog', 'sub', 'clock', 'hintA', 'vol', 'cells', 'vnum', 'vlabel',
       'menu', 'title', 'items', 'toast', 'rename', 'rtitle', 'field', 'keys',
-      'guide', 'gchan', 'gtitle', 'gwhen', 'gdesc', 'gday', 'gtimes', 'grows']) {
+      'guide', 'gchan', 'gtitle', 'gwhen', 'gdesc', 'gday', 'gtimes', 'grows', 'banner']) {
       ui[name] = shadow.querySelector('.' + name);
     }
   }
@@ -514,6 +586,7 @@ function mainMenu() {
   const extras = [];
   if (channels().length) extras.push({ label: 'TV GUIDE', run: openGuide });
   if (now >= 0) {
+    extras.push({ label: '⌕ FIND IN TV GUIDE', run: () => { toast('LOOKING…', 3); sendClues(now, 'find'); } });
     extras.push({ label: `✎ RENAME ${channels()[now].name}`, run: () => openRename(now) });
     extras.push({ label: `✕ REMOVE ${channels()[now].name}`, run: () => confirmRemove(now) });
   } else {
@@ -521,6 +594,9 @@ function mainMenu() {
   }
   const last = channels()[S.previous];
   if (last && S.previous !== now) extras.push({ label: `↺ LAST CHANNEL: ${last.name}`, run: () => tune(S.previous) });
+  if (channels().length > 1 || (channels().length && now < 0)) {
+    extras.push({ label: '⌕ SCAN ALL CHANNELS FOR THE GUIDE', run: () => { toast('STARTING THE SCAN…', 3); send({ t: 'scanAll' }); } });
+  }
   extras.push({ label: 'BROWSE A SERVICE…', run: () => openMenu(servicesMenu(), 'BROWSE') });
   if (history.length > 1) extras.push({ label: '◄ PREVIOUS PAGE', run: () => history.back() });
   if (tvOn) extras.push({ label: "THE SITE'S OWN SCREEN", run: useOwnScreen });
@@ -916,6 +992,11 @@ window.__couchKey = (e) => {
     }
     return false;
   }
+  if (key === 'Escape' && S.scan) {
+    send({ t: 'scanStop' });
+    toast('STOPPING THE SCAN…', 3);
+    return true;
+  }
   if (key === 'Escape' && !typing()) {
     openMenu(mainMenu(), S.tile || 'LIVE SURFER');
     return true;
@@ -1007,6 +1088,21 @@ function tick() {
       hideBar();
       toast('NOT PLAYING YET — START IT ON SCREEN, OR PRESS B FOR THE MENU', 10);
     }
+  }
+
+  // Clues for the guide: once the page has had time to fill in (or gave up starting).
+  if (onChannel && cluesSentFor !== location.href + '#' + now) {
+    const why = wantsClues(now);
+    const settled = (isPlaying(v) && Date.now() - announcedAt > 6000) || Date.now() - pageAt > 20000;
+    if (why && settled) sendClues(now, why);
+  }
+  if (ui.banner) {
+    ui.banner.style.display = S.scan ? 'block' : 'none';
+    if (S.scan) ui.banner.textContent = `SCANNING FOR THE TV GUIDE · ${S.scan.step} OF ${S.scan.total} · B STOPS`;
+  }
+  if (S.notice && S.notice.at !== window.__couchNoticeShown && Date.now() - S.notice.at < 30000) {
+    window.__couchNoticeShown = S.notice.at;
+    toast(S.notice.text, 10);
   }
 
   if (tvOn) {
