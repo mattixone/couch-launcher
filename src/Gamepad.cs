@@ -88,8 +88,8 @@ sealed class Gamepad
     }
 
     public int Connected => connected.Count(c => c);
-    /// <summary>X pressed, whatever's in front.</summary>
-    public event Action? XPressed;
+    /// <summary>X or Y pressed, whatever's in front.</summary>
+    public event Action? XPressed, YPressed;
 
     /// <summary>Turns polling on or off and sets the home combo. Returns a
     /// problem to show, or null.</summary>
@@ -178,8 +178,10 @@ sealed class Gamepad
             }
         }
 
-        // X goes to whatever's in front (Live Surfer's TV guide), not just the launcher.
+        // X and Y go to whatever's in front (Live Surfer's TV guide and
+        // options), not just the launcher.
         if ((pressed & Button.X) != 0) XPressed?.Invoke();
+        if ((pressed & Button.Y) != 0) YPressed?.Invoke();
 
         if (!inFront())
         {

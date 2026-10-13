@@ -8,10 +8,12 @@
 //  - The TV look: when a video is playing, it fills the screen and the rest
 //    of the page is hidden. The site's player still does the playing, so
 //    sign-ins and DRM work as normal.
-//  - Keys. B: the menu (channels, add/remove/rename, the TV guide, browse a
-//    service), anywhere. Watching a channel: ◄► change channel, ▲▼ volume,
-//    A the channel bar. X (or A twice, or G on a keyboard) opens the TV
+//  - Keys. B: the channel list, anywhere. Y: options (add/rename/remove,
+//    the TV guide, browse a service…). Watching a channel: ◄► change
+//    channel, ▲▼ volume, A the channel bar. X (or A twice, or G) opens the TV
 //    guide page — Freeview's unless you picked another — and back again.
+//    The Retroid sends keys, so its X and Y are set up in its app to send
+//    X (or G) and Y; an Xbox-style controller's reach here via the launcher.
 //    Watching anything else: A play/pause, ◄► 10 s back/forward, ▲▼ volume.
 //    Anywhere else the keys belong to the site, so you can browse it.
 //
@@ -161,7 +163,7 @@ function addThis() {
   }
   const name = cleanTitle();
   send({ t: 'add', name, url: location.href });
-  toast(`ADDED ${name} — TO CHANGE ITS NAME: B, THEN RENAME`, 8);
+  toast(`ADDED ${name} — TO CHANGE ITS NAME: Y, THEN RENAME`, 8);
 }
 
 // --------------------------------------------------------------- the video
@@ -365,14 +367,14 @@ function buildUi() {
         </div>
         <div class="vol"><span class="vlabel">VOL</span><div class="cells"></div><span class="vnum"></span></div>
         <div class="menu"><div class="title"></div><div class="items"></div>
-          <div class="hint">▲▼ MOVE &nbsp; A CHOOSE &nbsp; B CLOSE</div></div>
+          <div class="hint mhint"></div></div>
         <div class="rename"><div class="title rtitle"></div><div class="field"></div><div class="keys"></div>
           <div class="hint">D-PAD + A, OR TYPE ON A KEYBOARD &nbsp; B CANCEL</div></div>
         <div class="toast"></div>
       </div>`;
     ui.host = host;
     for (const name of ['bar', 'num', 'name', 'now', 'sub', 'clock', 'hintA', 'vol', 'cells', 'vnum', 'vlabel',
-      'menu', 'title', 'items', 'toast', 'rename', 'rtitle', 'field', 'keys',
+      'menu', 'title', 'items', 'mhint', 'toast', 'rename', 'rtitle', 'field', 'keys',
       ]) {
       ui[name] = shadow.querySelector('.' + name);
     }
@@ -450,45 +452,60 @@ window.__couchVolume = (percent, muted) => {
 
 // -------------------------------------------------------------------- menu
 
-const menu = { open: false, entries: [], at: 0, title: '' };
+const menu = { open: false, entries: [], at: 0, title: '', kind: '' };
 
-function mainMenu() {
+/** B: the channels, and nothing else. */
+function channelMenu() {
   const now = current();
+  const back = onGuidePage() ? S.current : -1;
   const entries = channels().map((c, i) => ({
-    label: `${String(i + 1).padStart(2, '0')}  ${c.name}`, now: i === now, run: () => tune(i),
+    label: `${String(i + 1).padStart(2, '0')}  ${c.name}`, now: i === now, pick: i === back, run: () => tune(i),
   }));
   if (!entries.length) {
-    entries.push({ note: true, label: 'NO CHANNELS YET. BROWSE A SERVICE, START A LIVE CHANNEL PLAYING, THEN PRESS B AND ADD IT.' });
+    entries.push({ note: true, label: 'NO CHANNELS YET. START A LIVE CHANNEL PLAYING, THEN PRESS Y AND CHOOSE + ADD THIS CHANNEL.' });
   }
-  const extras = [];
+  return entries;
+}
+
+/** Y: everything else, for the page you're on. */
+function optionsMenu() {
+  const now = current();
   const guidePage = onGuidePage();
+  const entries = [];
   if (guidePage) {
     const back = channels()[S.current];
-    if (back) extras.push({ label: `◄ BACK TO ${back.name}`, pick: true, run: () => tune(S.current) });
+    if (back) entries.push({ label: `◄ BACK TO ${back.name}`, run: () => tune(S.current) });
   } else if (now >= 0) {
-    extras.push({ label: `✎ RENAME ${channels()[now].name}`, run: () => openRename(now) });
-    extras.push({ label: `✕ REMOVE ${channels()[now].name}`, run: () => confirmRemove(now) });
+    entries.push({ label: `✎ RENAME ${channels()[now].name}`, run: () => openRename(now) });
+    entries.push({ label: `✕ REMOVE ${channels()[now].name}`, run: () => confirmRemove(now) });
   } else {
-    extras.push({ label: '+ ADD THIS CHANNEL', run: addThis });
+    entries.push({ label: '+ ADD THIS CHANNEL', run: addThis });
   }
-  if (!guidePage && S.guidePage) extras.push({ label: 'TV GUIDE', run: toggleGuide });
+  if (!guidePage && S.guidePage) entries.push({ label: 'TV GUIDE', run: toggleGuide });
   const last = channels()[S.previous];
-  if (last && S.previous !== now) extras.push({ label: `↺ LAST CHANNEL: ${last.name}`, run: () => tune(S.previous) });
-  extras.push({ label: 'BROWSE A SERVICE…', run: () => openMenu(servicesMenu(), 'BROWSE') });
+  if (last && S.previous !== now) entries.push({ label: `↺ LAST CHANNEL: ${last.name}`, run: () => tune(S.previous) });
+  entries.push({ label: 'BROWSE A SERVICE…', run: () => openMenu(servicesMenu(), 'BROWSE', 'services') });
   if (!guidePage && now < 0 && /^https?:$/.test(location.protocol)) {
-    extras.push({ label: 'USE THIS PAGE AS THE TV GUIDE', run: () => { send({ t: 'setGuide', url: location.href }); toast('THIS PAGE IS NOW THE TV GUIDE (X)'); } });
+    entries.push({ label: 'USE THIS PAGE AS THE TV GUIDE', run: () => { send({ t: 'setGuide', url: location.href }); toast('THIS PAGE IS NOW THE TV GUIDE (X)'); } });
   }
-  if (history.length > 1) extras.push({ label: '◄ PREVIOUS PAGE', run: () => history.back() });
-  if (tvOn) extras.push({ label: "THE SITE'S OWN SCREEN", run: useOwnScreen });
-  extras[0].gap = true;
-  for (const e of extras) e.extra = true;
-  return [...entries, ...extras];
+  if (history.length > 1) entries.push({ label: '◄ PREVIOUS PAGE', run: () => history.back() });
+  if (tvOn) entries.push({ label: "THE SITE'S OWN SCREEN", run: useOwnScreen });
+  return entries;
 }
+
+const openChannels = () => openMenu(channelMenu(), S.tile || 'LIVE SURFER', 'channels');
+const openOptions = () => openMenu(optionsMenu(), 'OPTIONS', 'options');
+window.__couchOptions = () => {
+  try {
+    if (menu.open && menu.kind === 'options') closeMenu();
+    else if (!rename.open) openOptions();
+  } catch (e) { log('options: ' + e); }
+};
 
 function servicesMenu() {
   return [
     ...(S.services || []).map((s) => ({ label: s.name, run: () => { log(`browse ${s.name}`); location.assign(s.url); } })),
-    { label: '◄ BACK', extra: true, gap: true, keepOpen: true, run: () => openMenu(mainMenu(), S.tile || 'LIVE SURFER') },
+    { label: '◄ BACK', extra: true, gap: true, keepOpen: true, run: openOptions },
   ];
 }
 
@@ -497,13 +514,20 @@ function confirmRemove(index) {
   openMenu([
     { label: `YES, REMOVE ${channel.name}`, run: () => { send({ t: 'remove', index }); toast(`REMOVED ${channel.name}`); } },
     { label: 'NO', run: () => {} },
-  ], `REMOVE CHANNEL ${String(index + 1).padStart(2, '0')}?`);
+  ], `REMOVE CHANNEL ${String(index + 1).padStart(2, '0')}?`, 'confirm');
 }
 
-function openMenu(entries, title) {
+const HINTS = {
+  channels: '▲▼ MOVE &nbsp; A WATCH &nbsp; Y OPTIONS &nbsp; B CLOSE',
+  options: '▲▼ MOVE &nbsp; A CHOOSE &nbsp; B CLOSE',
+};
+
+function openMenu(entries, title, kind = '') {
   if (!buildUi()) return;
   menu.entries = entries;
   menu.title = title;
+  menu.kind = kind;
+  ui.mhint.innerHTML = HINTS[kind] || HINTS.options;
   menu.at = Math.max(0, entries.findIndex((e) => e.now || e.pick));
   while (menu.entries[menu.at] && menu.entries[menu.at].note) menu.at++;
   menu.open = true;
@@ -694,6 +718,11 @@ window.__couchKey = (e) => {
   const key = e.key;
   if (rename.open) return renameKey(e);
   if (menu.open) {
+    if ((key === 'y' || key === 'Y') && menu.kind !== 'confirm') {
+      if (menu.kind === 'options') closeMenu();
+      else openOptions();
+      return true;
+    }
     switch (key) {
       case 'ArrowUp': moveMenu(-1); return true;
       case 'ArrowDown': moveMenu(1); return true;
@@ -703,12 +732,16 @@ window.__couchKey = (e) => {
     }
     return false;
   }
-  if ((key === 'g' || key === 'G') && !typing()) {
+  if (/^[gGxX]$/.test(key) && !typing()) {
     toggleGuide();
     return true;
   }
+  if ((key === 'y' || key === 'Y') && !typing()) {
+    openOptions();
+    return true;
+  }
   if (key === 'Escape' && !typing()) {
-    openMenu(mainMenu(), S.tile || 'LIVE SURFER');
+    openChannels();
     return true;
   }
   if (!tvOn) return false;
@@ -793,7 +826,7 @@ function tick() {
       startTries = 100;
       log(`${channels()[now].name} didn't start playing on ${location.host}${location.pathname}`);
       hideBar();
-      toast('NOT PLAYING YET — START IT ON SCREEN, OR PRESS B FOR THE MENU', 10);
+      toast('NOT PLAYING YET — START IT ON SCREEN, OR PRESS Y FOR OPTIONS', 10);
     }
   }
 
@@ -824,7 +857,8 @@ function startChannel(v, index) {
 /** New settings from the launcher (a channel added, removed, renamed or changed). */
 window.__couchUpdate = (settings) => {
   S = settings;
-  if (menu.open && menu.title === (S.tile || 'LIVE SURFER')) openMenu(mainMenu(), menu.title);
+  if (menu.open && menu.kind === 'channels') openChannels();
+  else if (menu.open && menu.kind === 'options') openOptions();
 };
 
 setInterval(() => {
