@@ -15,7 +15,7 @@ sealed class SettingsScreen : Screen
 
     /// <summary>The ADVANCED page, or the main one.</summary>
     readonly bool advanced;
-    const int AdvancedRow = 3;
+    const int AdvancedRow = 4;
 
     public SettingsScreen(MainWindow host, bool advanced = false, int select = 0) : base(host)
     {
@@ -34,6 +34,9 @@ sealed class SettingsScreen : Screen
                 new(() => $"THEME   ◄ {Host.Palette.Label} ►",
                     () => Host.SetTheme(Host.Palette.Next),
                     step => Host.SetTheme(step > 0 ? Host.Palette.Next : Host.Palette.Previous)),
+                new(() => $"TILE SIZE   ◄ {TileSizes.All[TileSizes.IndexOf(Host.Config.TileSize)].Id} ►",
+                    () => SetTileSize(1),
+                    SetTileSize),
                 new(() => $"PHONE REMOTE   ◄ {(Host.Config.PhoneRemote ? "ON" : "OFF")} ►",
                     () => Host.ShowModal(new PhoneRemoteModal(Host)),
                     _ => TogglePhoneRemote()),
@@ -42,6 +45,14 @@ sealed class SettingsScreen : Screen
                 new(() => "CHECK FOR UPDATES", CheckForUpdates),
                 new(() => "EXIT THE LAUNCHER", ConfirmExit),
             };
+    }
+
+    /// <summary>◄► through LARGE, MEDIUM and SMALL. The home screen picks it up when it's next shown.</summary>
+    void SetTileSize(int step)
+    {
+        Host.Config.TileSize = TileSizes.Step(Host.Config.TileSize, step);
+        Host.Config.Save();
+        Host.RebuildScreen();
     }
 
     /// <summary>B: from ADVANCED back to the main settings (on ADVANCED), from there home.</summary>

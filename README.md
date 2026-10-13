@@ -6,6 +6,15 @@ browser (YouTube in Brave, slither.io in Chrome), each as its own fullscreen
 window. Everything is driven by the Retroid through the Pico: the d-pad moves,
 A (Play/Pause) opens, B (Escape) closes an open app.
 
+## Folders and tile size
+
+- **Folders:** in Settings › Edit tiles, give tiles the same FOLDER name
+  (e.g. `GAMES`) and the home screen shows one folder tile in their place,
+  where the first of them was. A opens it; inside, BACK (or B) returns to the
+  home screen. B on a tile whose app is open still offers to close it.
+- **Tile size:** Settings › TILE SIZE, ◄► for LARGE, MEDIUM or SMALL (4, 5 or
+  6 tiles to a row).
+
 ## Shortcuts (set these up in the Retroid app)
 
 | Shortcut | Does |

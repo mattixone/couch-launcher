@@ -89,7 +89,9 @@ sealed class EditorScreen : Screen
                 BorderBrush = Crt.Fg(on ? 1 : 0.2),
                 Background = Crt.Fg(on ? 0.16 : 0.02),
                 Child = Crt.Text(
-                    $"{i + 1}. {Tiles[i].Name.ToUpperInvariant()}{(Tiles[i].Hidden ? "  (HIDDEN)" : "")}",
+                    $"{i + 1}. {Tiles[i].Name.ToUpperInvariant()}" +
+                    (Tiles[i].FolderKey.Length > 0 ? $"  › {Tiles[i].FolderKey}" : "") +
+                    (Tiles[i].Hidden ? "  (HIDDEN)" : ""),
                     26, Tiles[i].Hidden ? 0.5 : 1, bold: on),
                 Cursor = System.Windows.Input.Cursors.Hand,
             };
@@ -125,6 +127,22 @@ sealed class EditorScreen : Screen
             ("SHOWN", !tile.Hidden, () => { tile.Hidden = false; RebuildList(); RebuildForm(); }),
             ("HIDDEN", tile.Hidden, () => { tile.Hidden = true; RebuildList(); RebuildForm(); })),
             "Hidden tiles stay here so you can bring them back, but don't appear on the home screen or in the switcher."));
+
+        var folderField = new StackPanel();
+        folderField.Children.Add(Crt.Input(tile.Folder, value =>
+        {
+            tile.Folder = value.Trim();
+            RebuildList();
+        }));
+        var folderChips = new List<(string, bool, Action)>
+        {
+            ("NONE", tile.FolderKey.Length == 0, () => SetFolder(tile, "")),
+        };
+        foreach (var name in Tiles.Select(t => t.FolderKey).Where(key => key.Length > 0).Distinct())
+            folderChips.Add((name, tile.FolderKey == name, () => SetFolder(tile, name)));
+        folderField.Children.Add(Chips(folderChips.ToArray()));
+        fields.Children.Add(Field("FOLDER", folderField,
+            "Tiles with the same folder name share one folder tile on the home screen. Type a new name to start a folder; NONE puts the tile back on the home screen."));
 
         fields.Children.Add(Field("TYPE", Chips(
             ("WEB PAGE", tile.Kind == TileKind.Web, () => SetKind(tile, TileKind.Web)),
@@ -266,6 +284,13 @@ sealed class EditorScreen : Screen
         (tile.Channels[index], tile.Channels[to]) = (tile.Channels[to], tile.Channels[index]);
         if (tile.LastChannel == index) tile.LastChannel = to;
         else if (tile.LastChannel == to) tile.LastChannel = index;
+        RebuildForm();
+    }
+
+    void SetFolder(Tile tile, string name)
+    {
+        tile.Folder = name;
+        RebuildList();
         RebuildForm();
     }
 
